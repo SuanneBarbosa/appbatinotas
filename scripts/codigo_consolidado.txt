@@ -1,0 +1,2636 @@
+[main.dart]
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:provider/provider.dart';
+
+import 'controllers/combinatorics_controller.dart';
+import 'services/note_audio_service.dart';
+import 'user_interface/screens/home_screen.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations([
+    DeviceOrientation.landscapeLeft,
+    DeviceOrientation.landscapeRight,
+  ]);
+  runApp(const CombinaSomAlgebricoApp());
+}
+
+class CombinaSomAlgebricoApp extends StatelessWidget {
+  const CombinaSomAlgebricoApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        Provider(create: (_) => NoteAudioService()),
+        ChangeNotifierProxyProvider<NoteAudioService, CombinatoricsController>(
+          create: (context) => CombinatoricsController(
+            audioService: context.read<NoteAudioService>(),
+          ),
+          update: (_, audioService, previous) => previous ?? CombinatoricsController(audioService: audioService),
+        ),
+      ],
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        title: 'CombinaSom Algébrico',
+        locale: const Locale('pt', 'BR'),
+        supportedLocales: const [Locale('pt', 'BR')],
+        localizationsDelegates: const [
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+          GlobalCupertinoLocalizations.delegate,
+        ],
+        theme: ThemeData(
+          colorScheme: ColorScheme.fromSeed(
+            seedColor: const Color(0xFF4F46E5),
+            brightness: Brightness.light,
+          ),
+          useMaterial3: true,
+          scaffoldBackgroundColor: const Color(0xFFF8FAFC),
+          cardTheme: CardTheme(
+            elevation: 1,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          ),
+          filledButtonTheme: FilledButtonThemeData(
+            style: FilledButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ),
+        home: const HomeScreen(),
+      ),
+    );
+  }
+}
+
+----------------
+[controllers\combinatorics_controller.dart]
+
+import 'dart:math';
+import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
+
+import '../models/combination_mode.dart';
+import '../models/instrument.dart';
+import '../models/music_note.dart';
+import '../services/note_audio_service.dart';
+import '../utils/combinatorics_math.dart';
+
+import '../models/saved_activity_model.dart';
+import '../services/saved_activity_service.dart';
+
+import '../models/saved_activity_model.dart';
+import '../services/saved_activity_service.dart';
+
+class CombinatoricsController extends ChangeNotifier {
+  final NoteAudioService audioService;
+
+  CombinatoricsController({required this.audioService}) {
+    _selectedNotes.addAll(defaultNotes.take(3));
+    refreshExamples();
+  }
+
+  static const int maxListAll = 120;
+  static const int exampleCount = 12;
+
+  final List<MusicNote> availableNotes = defaultNotes;
+  final List<MusicNote> _selectedNotes = [];
+  final List<List<MusicNote>> _examples = [];
+
+  CombinationMode _mode = CombinationMode.withRepetition;
+  int _beatCount = 3;
+  int? _playingExampleIndex;
+  int? _playingNoteIndex;
+  String _studentFoundTotal = '';
+  String _studentCalculation = '';
+  String _studentGeneralRule = '';
+  String _studentExplanation = '';
+
+  List<MusicNote> get selectedNotes => List.unmodifiable(_selectedNotes);
+  List<List<MusicNote>> get examples => List.unmodifiable(_examples);
+
+  CombinationMode get mode => _mode;
+  int get beatCount => _beatCount;
+  int get n => _selectedNotes.length;
+
+  int? get playingExampleIndex => _playingExampleIndex;
+  int? get playingNoteIndex => _playingNoteIndex;
+
+  String get studentFoundTotal => _studentFoundTotal;
+  String get studentCalculation => _studentCalculation;
+  String get studentGeneralRule => _studentGeneralRule;
+  String get studentExplanation => _studentExplanation;
+
+  Instrument get selectedInstrument => audioService.selectedInstrument;
+
+  bool get canCalculateFixedWithoutRepetition => n > 0 && _beatCount <= n;
+
+  bool get isImpossibleWithoutRepetition =>
+      n > 0 && _mode == CombinationMode.withoutRepetition && _beatCount > n;
+
+  BigInt? get totalWithRepetition {
+    if (n == 0) return null;
+    return CombinatoricsMath.powInt(n, _beatCount);
+  }
+
+  BigInt? get totalWithoutRepetition {
+    if (n == 0) return null;
+    return CombinatoricsMath.arrangementsWithoutRepetition(n, _beatCount);
+  }
+
+  BigInt? get activeTotal {
+    if (n == 0) return null;
+
+    switch (_mode) {
+      case CombinationMode.withRepetition:
+        return totalWithRepetition;
+      case CombinationMode.withoutRepetition:
+        return totalWithoutRepetition;
+    }
+  }
+
+  bool get shouldListAll {
+    final total = activeTotal;
+    return total != null && total <= BigInt.from(maxListAll);
+  }
+
+  void toggleNote(MusicNote note) {
+    final exists = _selectedNotes.any((item) => item.id == note.id);
+
+    if (exists) {
+      _selectedNotes.removeWhere((item) => item.id == note.id);
+    } else {
+      _selectedNotes.add(note);
+      _selectedNotes.sort((a, b) => a.id.compareTo(b.id));
+    }
+
+    _announce('Quantidade de notas escolhidas: $n. Portanto, n igual a $n.');
+    refreshExamples();
+    notifyListeners();
+  }
+
+  void selectAllNotes() {
+    _selectedNotes
+      ..clear()
+      ..addAll(availableNotes);
+
+    refreshExamples();
+    notifyListeners();
+  }
+
+  void clearNotes() {
+    _selectedNotes.clear();
+    refreshExamples();
+    notifyListeners();
+  }
+
+  void setMode(CombinationMode mode) {
+    _mode = mode;
+    refreshExamples();
+    notifyListeners();
+  }
+
+  void setBeatCount(int value) {
+    _beatCount = value.clamp(1, 12);
+    refreshExamples();
+    notifyListeners();
+  }
+
+  void setInstrument(Instrument instrument) {
+    audioService.selectedInstrument = instrument;
+    notifyListeners();
+  }
+
+  void setStudentFoundTotal(String value) {
+    _studentFoundTotal = value;
+    notifyListeners();
+  }
+
+  void setStudentCalculation(String value) {
+    _studentCalculation = value;
+    notifyListeners();
+  }
+
+  void setStudentGeneralRule(String value) {
+    _studentGeneralRule = value;
+    notifyListeners();
+  }
+
+  void setStudentExplanation(String value) {
+    _studentExplanation = value;
+    notifyListeners();
+  }
+
+  void refreshExamples() {
+    _examples
+      ..clear()
+      ..addAll(_generateExamples());
+  }
+
+  List<List<MusicNote>> _generateExamples() {
+    if (n == 0) return [];
+
+    final length = _beatCount;
+
+    if (_mode == CombinationMode.withoutRepetition && length > n) {
+      return [];
+    }
+
+    if (shouldListAll) {
+      return _generateAll(length);
+    }
+
+    return _generateSample(length, exampleCount);
+  }
+
+  List<List<MusicNote>> _generateAll(int length) {
+    switch (_mode) {
+      case CombinationMode.withRepetition:
+        return _generateWithRepetition(length);
+      case CombinationMode.withoutRepetition:
+        return _generateWithoutRepetition(length);
+    }
+  }
+
+  List<List<MusicNote>> _generateWithRepetition(int length) {
+    final result = <List<MusicNote>>[];
+
+    void generate(List<MusicNote> current) {
+      if (current.length == length) {
+        result.add(List<MusicNote>.from(current));
+        return;
+      }
+
+      for (final note in _selectedNotes) {
+        current.add(note);
+        generate(current);
+        current.removeLast();
+      }
+    }
+
+    generate([]);
+    return result;
+  }
+
+  List<List<MusicNote>> _generateWithoutRepetition(int length) {
+    final result = <List<MusicNote>>[];
+
+    void generate(List<MusicNote> current, List<MusicNote> remaining) {
+      if (current.length == length) {
+        result.add(List<MusicNote>.from(current));
+        return;
+      }
+
+      for (int i = 0; i < remaining.length; i++) {
+        final note = remaining[i];
+
+        current.add(note);
+
+        final next = List<MusicNote>.from(remaining)..removeAt(i);
+
+        generate(current, next);
+
+        current.removeLast();
+      }
+    }
+
+    generate([], List<MusicNote>.from(_selectedNotes));
+    return result;
+  }
+
+  List<List<MusicNote>> _generateSample(int length, int count) {
+    final random = Random(12 + n + length);
+    final seen = <String>{};
+    final result = <List<MusicNote>>[];
+
+    int guard = 0;
+
+    while (result.length < count && guard < 1000) {
+      guard++;
+
+      final pool = List<MusicNote>.from(_selectedNotes);
+      final melody = <MusicNote>[];
+
+      for (int i = 0; i < length; i++) {
+        if (pool.isEmpty) break;
+
+        final index = random.nextInt(pool.length);
+
+        melody.add(pool[index]);
+
+        if (_mode == CombinationMode.withoutRepetition) {
+          pool.removeAt(index);
+        }
+      }
+
+      if (melody.length == length) {
+        final key = melody.map((note) => note.id).join('-');
+
+        if (seen.add(key)) {
+          result.add(melody);
+        }
+      }
+    }
+
+    return result;
+  }
+
+  Future<void> playExample(int index) async {
+    if (index < 0 || index >= _examples.length) return;
+
+    _playingExampleIndex = index;
+    notifyListeners();
+
+    await audioService.playMelody(
+      _examples[index],
+      onNote: (noteIndex) {
+        _playingNoteIndex = noteIndex >= 0 ? noteIndex : null;
+        notifyListeners();
+      },
+    );
+
+    _playingExampleIndex = null;
+    _playingNoteIndex = null;
+    notifyListeners();
+  }
+
+  Future<void> playSelectedNote(MusicNote note) async {
+    await audioService.playNote(note);
+  }
+
+  String fixedRuleWithRepetition() => '$n^$_beatCount';
+
+  String fixedExpandedWithRepetition() {
+    if (n == 0) return '';
+    return List.filled(_beatCount, '$n').join(' × ');
+  }
+
+  String fixedExpandedWithoutRepetition() {
+    if (n == 0) return '';
+
+    if (_beatCount > n) {
+      return 'impossível, pois b > n';
+    }
+
+    return List.generate(_beatCount, (i) => '${n - i}').join(' × ');
+  }
+
+  String generalRuleWithRepetition() => 'M(n, b) = n^b';
+
+  String generalRuleWithoutRepetition() => 'M(n, b) = n! / (n - b)!';
+
+  String expectedTotalText() {
+    if (n == 0) {
+      return 'Escolha as notas para calcular.';
+    }
+
+    if (_mode == CombinationMode.withRepetition) {
+      final total = totalWithRepetition ?? BigInt.zero;
+      return CombinatoricsMath.formatBigInt(total);
+    }
+
+    if (_beatCount > n) {
+      return 'Não é possível sem repetição, pois b > n.';
+    }
+
+    final total = totalWithoutRepetition ?? BigInt.zero;
+    return CombinatoricsMath.formatBigInt(total);
+  }
+
+  String expectedCalculationText() {
+    if (n == 0) {
+      return 'Escolha as notas primeiro.';
+    }
+
+    if (_mode == CombinationMode.withRepetition) {
+      final total = totalWithRepetition ?? BigInt.zero;
+      return '${fixedExpandedWithRepetition()} = ${CombinatoricsMath.formatBigInt(total)}';
+    }
+
+    if (_beatCount > n) {
+      return 'Não é possível, pois a quantidade de batidas é maior que a quantidade de notas.';
+    }
+
+    final total = totalWithoutRepetition ?? BigInt.zero;
+    return '${fixedExpandedWithoutRepetition()} = ${CombinatoricsMath.formatBigInt(total)}';
+  }
+
+  String expectedGeneralRuleText() {
+    if (_mode == CombinationMode.withRepetition) {
+      return generalRuleWithRepetition();
+    }
+
+    return generalRuleWithoutRepetition();
+  }
+
+  Future<void> saveCurrentActivity() async {
+    final activity = SavedActivityModel(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      createdAt: DateTime.now(),
+
+      selectedNoteIds: _selectedNotes.map((note) => note.id).toList(),
+      selectedNotes: _selectedNotes.map((note) => note.solfege).toList(),
+
+      noteCount: n,
+      beatCount: _beatCount,
+      mode: _mode.label,
+      instrumentId: selectedInstrument.id,
+      instrument: selectedInstrument.displayName,
+
+      // Se você não quer salvar sugestões/gabarito, deixe vazio.
+      expectedTotal: '',
+      expectedCalculation: '',
+      expectedGeneralRule: '',
+
+      studentFoundTotal: _studentFoundTotal,
+      studentCalculation: _studentCalculation,
+      studentGeneralRule: _studentGeneralRule,
+      studentExplanation: _studentExplanation,
+    );
+
+    await SavedActivityService.saveActivity(activity);
+  }
+
+  String finalReport() {
+    final buffer = StringBuffer();
+
+    buffer.writeln('Relatório da atividade - CombinaSom Algébrico');
+    buffer.writeln(
+      'Notas escolhidas: ${_selectedNotes.map((note) => note.solfege).join(', ')}',
+    );
+    buffer.writeln('Quantidade de notas: n = $n');
+    buffer.writeln('Modo: ${_mode.label}');
+    buffer.writeln('Batidas: $_beatCount');
+    buffer.writeln('Instrumento: ${selectedInstrument.displayName}');
+    buffer.writeln('');
+
+    if (_mode == CombinationMode.withRepetition) {
+      final total = totalWithRepetition ?? BigInt.zero;
+
+      buffer.writeln(
+        'Cálculo: ${fixedExpandedWithRepetition()} = ${CombinatoricsMath.formatBigInt(total)}',
+      );
+      buffer.writeln('Potência: ${fixedRuleWithRepetition()}');
+      buffer.writeln('Regra geral: ${generalRuleWithRepetition()}');
+    } else {
+      final total = totalWithoutRepetition ?? BigInt.zero;
+
+      buffer.writeln(
+        'Cálculo: ${fixedExpandedWithoutRepetition()} = ${CombinatoricsMath.formatBigInt(total)}',
+      );
+      buffer.writeln('Regra geral: ${generalRuleWithoutRepetition()}');
+    }
+
+    buffer.writeln('');
+    buffer.writeln('Respostas do aluno:');
+
+    buffer.writeln('1. Quantas músicas você formou/encontrou?');
+    buffer.writeln(
+      _studentFoundTotal.trim().isEmpty
+          ? '(não preenchida)'
+          : _studentFoundTotal.trim(),
+    );
+
+    buffer.writeln('');
+    buffer.writeln('2. Qual cálculo você utilizou para encontrar esse valor?');
+    buffer.writeln(
+      _studentCalculation.trim().isEmpty
+          ? '(não preenchida)'
+          : _studentCalculation.trim(),
+    );
+
+    buffer.writeln('');
+    buffer.writeln(
+        '3. Escreva a regra geral que representa esse tipo de situação.');
+    buffer.writeln(
+      _studentGeneralRule.trim().isEmpty
+          ? '(não preenchida)'
+          : _studentGeneralRule.trim(),
+    );
+
+    buffer.writeln('');
+    buffer.writeln('4. Explique com suas palavras como essa regra funciona.');
+    buffer.writeln(
+      _studentExplanation.trim().isEmpty
+          ? '(não preenchida)'
+          : _studentExplanation.trim(),
+    );
+
+    return buffer.toString();
+  }
+
+  void _announce(String message) {
+    SemanticsService.announce(message, TextDirection.ltr);
+  }
+}
+
+----------------
+[models\combination_mode.dart]
+
+enum CombinationMode {
+  withRepetition,
+  withoutRepetition,
+}
+
+extension CombinationModeLabel on CombinationMode {
+  String get label {
+    switch (this) {
+      case CombinationMode.withRepetition:
+        return 'Com repetição';
+      case CombinationMode.withoutRepetition:
+        return 'Sem repetição';
+    }
+  }
+
+  String get description {
+    switch (this) {
+      case CombinationMode.withRepetition:
+        return 'A mesma nota pode aparecer mais de uma vez na música.';
+      case CombinationMode.withoutRepetition:
+        return 'Cada nota pode aparecer apenas uma vez na música.';
+    }
+  }
+}
+
+----------------
+[models\instrument.dart]
+
+class Instrument {
+  final String id;
+  final String displayName;
+  final String filePrefix;
+
+  const Instrument({
+    required this.id,
+    required this.displayName,
+    required this.filePrefix,
+  });
+}
+
+const List<Instrument> availableInstruments = [
+  Instrument(
+    id: 'piano',
+    displayName: 'Piano Acústico',
+    filePrefix: 'Piano_Acustico',
+  ),
+  Instrument(
+    id: 'baixo',
+    displayName: 'Baixo Elétrico',
+    filePrefix: 'Baixo_Eletrico_Dedo',
+  ),
+  Instrument(
+    id: 'banjo',
+    displayName: 'Banjo',
+    filePrefix: 'Banjo',
+  ),
+  Instrument(
+    id: 'flauta',
+    displayName: 'Flauta',
+    filePrefix: 'Flauta',
+  ),
+  Instrument(
+    id: 'flautadoce',
+    displayName: 'Flauta Doce',
+    filePrefix: 'Flauta_Doce',
+  ),
+  Instrument(
+    id: 'guitarra',
+    displayName: 'Guitarra Elétrica',
+    filePrefix: 'Guitarra_Eletrica_Limpa',
+  ),
+  Instrument(
+    id: 'orgao',
+    displayName: 'Órgão Hammond',
+    filePrefix: 'Órgão_Hammond',
+  ),
+  Instrument(
+    id: 'pianoeletrico',
+    displayName: 'Piano Elétrico',
+    filePrefix: 'Piano_Eletrico_1',
+  ),
+  Instrument(
+    id: 'sitar',
+    displayName: 'Sitar',
+    filePrefix: 'Sitar',
+  ),
+  Instrument(
+    id: 'trompete',
+    displayName: 'Trompete',
+    filePrefix: 'Trompete',
+  ),
+  Instrument(
+    id: 'violino',
+    displayName: 'Violino',
+    filePrefix: 'Violino',
+  ),
+];
+
+----------------
+[models\music_note.dart]
+
+import 'package:flutter/material.dart';
+
+class MusicNote {
+  final int id;
+  final String label;
+  final String solfege;
+  final String pitch;
+  final Color color;
+
+  const MusicNote({
+    required this.id,
+    required this.label,
+    required this.solfege,
+    required this.pitch,
+    required this.color,
+  });
+
+  String get semanticsLabel => 'Nota $id, $solfege, som $pitch';
+}
+
+const List<MusicNote> defaultNotes = [
+  MusicNote(
+      id: 0, label: '0', solfege: 'Dó', pitch: 'C4', color: Color(0xFF4338CA)),
+  MusicNote(
+      id: 1, label: '1', solfege: 'Ré', pitch: 'D4', color: Color(0xFF16A34A)),
+  MusicNote(
+      id: 2, label: '2', solfege: 'Mi', pitch: 'E4', color: Color(0xFF0284C7)),
+  MusicNote(
+      id: 3, label: '3', solfege: 'Fá', pitch: 'F4', color: Color(0xFFEAB308)),
+  MusicNote(
+      id: 4, label: '4', solfege: 'Sol', pitch: 'G4', color: Color(0xFF9333EA)),
+  MusicNote(
+      id: 5, label: '5', solfege: 'Lá', pitch: 'A4', color: Color(0xFFEA580C)),
+  MusicNote(
+      id: 6, label: '6', solfege: 'Si', pitch: 'B4', color: Color(0xFFDB2777)),
+  MusicNote(
+      id: 7,
+      label: '7',
+      solfege: 'Dó agudo',
+      pitch: 'C24',
+      color: Color(0xFF92400E)),
+  MusicNote(
+      id: 8,
+      label: '8',
+      solfege: 'Ré agudo',
+      pitch: 'D24',
+      color: Color(0xFF64748B)),
+  MusicNote(
+      id: 9,
+      label: '9',
+      solfege: 'Fá agudo',
+      pitch: 'F24',
+      color: Color(0xFF0891B2)),
+];
+
+----------------
+[models\saved_activity_model.dart]
+
+class SavedActivityModel {
+  final String id;
+  final DateTime createdAt;
+
+  final List<int> selectedNoteIds;
+  final List<String> selectedNotes;
+
+  final int noteCount;
+  final int beatCount;
+  final String mode;
+  final String instrumentId;
+  final String instrument;
+
+  final String expectedTotal;
+  final String expectedCalculation;
+  final String expectedGeneralRule;
+
+  final String studentFoundTotal;
+  final String studentCalculation;
+  final String studentGeneralRule;
+  final String studentExplanation;
+
+  const SavedActivityModel({
+    required this.id,
+    required this.createdAt,
+    required this.selectedNoteIds,
+    required this.selectedNotes,
+    required this.noteCount,
+    required this.beatCount,
+    required this.mode,
+    required this.instrumentId,
+    required this.instrument,
+    required this.expectedTotal,
+    required this.expectedCalculation,
+    required this.expectedGeneralRule,
+    required this.studentFoundTotal,
+    required this.studentCalculation,
+    required this.studentGeneralRule,
+    required this.studentExplanation,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'createdAt': createdAt.toIso8601String(),
+      'selectedNoteIds': selectedNoteIds,
+      'selectedNotes': selectedNotes,
+      'noteCount': noteCount,
+      'beatCount': beatCount,
+      'mode': mode,
+      'instrumentId': instrumentId,
+      'instrument': instrument,
+      'expectedTotal': expectedTotal,
+      'expectedCalculation': expectedCalculation,
+      'expectedGeneralRule': expectedGeneralRule,
+      'studentFoundTotal': studentFoundTotal,
+      'studentCalculation': studentCalculation,
+      'studentGeneralRule': studentGeneralRule,
+      'studentExplanation': studentExplanation,
+    };
+  }
+
+  factory SavedActivityModel.fromJson(Map<String, dynamic> json) {
+    return SavedActivityModel(
+      id: json['id'] ?? '',
+      createdAt: DateTime.tryParse(json['createdAt'] ?? '') ?? DateTime.now(),
+      selectedNoteIds: List<int>.from(json['selectedNoteIds'] ?? []),
+      selectedNotes: List<String>.from(json['selectedNotes'] ?? []),
+      noteCount: json['noteCount'] ?? 0,
+      beatCount: json['beatCount'] ?? 0,
+      mode: json['mode'] ?? '',
+      instrumentId: json['instrumentId'] ?? '',
+      instrument: json['instrument'] ?? '',
+      expectedTotal: json['expectedTotal'] ?? '',
+      expectedCalculation: json['expectedCalculation'] ?? '',
+      expectedGeneralRule: json['expectedGeneralRule'] ?? '',
+      studentFoundTotal: json['studentFoundTotal'] ?? '',
+      studentCalculation: json['studentCalculation'] ?? '',
+      studentGeneralRule: json['studentGeneralRule'] ?? '',
+      studentExplanation: json['studentExplanation'] ?? '',
+    );
+  }
+}
+
+----------------
+[services\note_audio_service.dart]
+
+import 'package:audioplayers/audioplayers.dart';
+import 'package:flutter/foundation.dart';
+
+import '../models/instrument.dart';
+import '../models/music_note.dart';
+
+class NoteAudioService {
+  final AudioPlayer _player = AudioPlayer();
+
+  Instrument selectedInstrument = availableInstruments.first;
+
+  int noteDurationMs = 400;
+  int delayMs = 80;
+
+  NoteAudioService() {
+    _player.setReleaseMode(ReleaseMode.stop);
+  }
+
+  String _buildAssetPath(MusicNote note) {
+    final instrumentFolder = selectedInstrument.id;
+    final filePrefix = selectedInstrument.filePrefix;
+
+    return 'sounds/$instrumentFolder/${note.pitch}_$filePrefix.mp3';
+  }
+
+  Future<void> playNote(MusicNote note) async {
+    final assetPath = _buildAssetPath(note);
+
+    try {
+      await _player.stop();
+      await _player.play(AssetSource(assetPath));
+
+      await Future<void>.delayed(
+        Duration(milliseconds: noteDurationMs),
+      );
+    } catch (e) {
+      debugPrint('Erro ao tocar nota: $assetPath');
+      debugPrint(e.toString());
+    }
+  }
+
+  Future<void> playMelody(
+    List<MusicNote> melody, {
+    void Function(int index)? onNote,
+  }) async {
+    for (int i = 0; i < melody.length; i++) {
+      onNote?.call(i);
+
+      await playNote(melody[i]);
+
+      if (delayMs > 0 && i < melody.length - 1) {
+        await Future<void>.delayed(
+          Duration(milliseconds: delayMs),
+        );
+      }
+    }
+
+    onNote?.call(-1);
+  }
+
+  Future<void> stop() async {
+    await _player.stop();
+  }
+
+  Future<void> dispose() async {
+    await _player.dispose();
+  }
+}
+
+----------------
+[services\saved_activity_service.dart]
+
+import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
+
+import '../models/saved_activity_model.dart';
+
+class SavedActivityService {
+  static const String _key = 'saved_combinasom_activities';
+
+  static Future<List<SavedActivityModel>> getActivities() async {
+    final prefs = await SharedPreferences.getInstance();
+    final list = prefs.getStringList(_key) ?? [];
+
+    return list.map((item) {
+      final json = jsonDecode(item) as Map<String, dynamic>;
+      return SavedActivityModel.fromJson(json);
+    }).toList();
+  }
+
+  static Future<void> saveActivity(SavedActivityModel activity) async {
+    final prefs = await SharedPreferences.getInstance();
+    final activities = await getActivities();
+
+    activities.insert(0, activity);
+
+    final encoded = activities.map((item) {
+      return jsonEncode(item.toJson());
+    }).toList();
+
+    await prefs.setStringList(_key, encoded);
+  }
+
+  static Future<void> deleteActivity(String id) async {
+    final prefs = await SharedPreferences.getInstance();
+    final activities = await getActivities();
+
+    activities.removeWhere((item) => item.id == id);
+
+    final encoded = activities.map((item) {
+      return jsonEncode(item.toJson());
+    }).toList();
+
+    await prefs.setStringList(_key, encoded);
+  }
+
+  static Future<void> clearAll() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_key);
+  }
+}
+
+----------------
+[user_interface\screens\home_screen.dart]
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../controllers/combinatorics_controller.dart';
+import '../widgets/examples_panel.dart';
+import '../widgets/formation_mode_selector.dart';
+import '../widgets/beat_count_selector.dart';
+import '../widgets/note_selector.dart';
+import '../widgets/result_panel.dart';
+import '../widgets/section_card.dart';
+import '../widgets/app_drawer.dart';
+
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<CombinatoricsController>();
+    return Scaffold(
+      drawer: const AppDrawer(),
+      appBar: AppBar(
+        // title: const Text('CombinaSom Algébrico'),
+        centerTitle: false,
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 5,
+                child: ListView(
+                  children: const [
+                    SectionCard(
+                      title: '',
+                      child: FormationModeSelector(),
+                    ),
+                    SectionCard(
+                      title: 'Notas musicais (n)',
+                      child: NoteSelector(),
+                    ),
+                    SectionCard(
+                      title: 'Número de batidas (b)',
+                      child: BeatCountSelector(),
+                    ),
+                    SectionCard(
+                      title: 'Exemplos sonoros',
+                      child: ExamplesPanel(),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                flex: 4,
+                child: ListView(
+                  children: const [
+                    SectionCard(
+                      title: 'Resultados',
+                      child: ResultPanel(),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+----------------
+[user_interface\screens\instructions_screen.dart]
+
+import 'package:flutter/material.dart';
+
+class UsageInstructionsScreen extends StatelessWidget {
+  const UsageInstructionsScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Instruções de uso'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: const [
+          _InstructionItem(
+            title: '1. Escolha o instrumento',
+            description:
+                'No menu lateral, selecione o instrumento que será usado para tocar as notas musicais.',
+          ),
+          _InstructionItem(
+            title: '2. Escolha o tipo de formação',
+            description:
+                'Defina se as músicas serão formadas com repetição ou sem repetição de notas.',
+          ),
+          _InstructionItem(
+            title: '3. Defina o número de batidas',
+            description:
+                'Escolha quantas posições, ou batidas, cada música terá.',
+          ),
+          _InstructionItem(
+            title: '4. Escolha as notas musicais',
+            description:
+                'Selecione as notas disponíveis. As notas escolhidas aparecem separadas na área de notas escolhidas.',
+          ),
+          _InstructionItem(
+            title: '5. Observe os exemplos sonoros',
+            description:
+                'O aplicativo mostra exemplos de músicas possíveis. Toque no botão de reprodução para ouvir cada exemplo.',
+          ),
+          _InstructionItem(
+            title: '6. Registre o raciocínio',
+            description:
+                'Na seção de resultados, responda às perguntas para explicar quantas músicas foram encontradas, qual cálculo foi usado e qual regra geral representa a situação.',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InstructionItem extends StatelessWidget {
+  final String title;
+  final String description;
+
+  const _InstructionItem({
+    required this.title,
+    required this.description,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              title,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                    fontWeight: FontWeight.w900,
+                  ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              description,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    height: 1.35,
+                  ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+----------------
+[user_interface\screens\saved_activities_screen.dart]
+
+import 'package:flutter/material.dart';
+
+import '../../models/saved_activity_model.dart';
+import '../../services/saved_activity_service.dart';
+import 'package:provider/provider.dart';
+
+import '../../controllers/combinatorics_controller.dart';
+
+class SavedActivitiesScreen extends StatefulWidget {
+  const SavedActivitiesScreen({super.key});
+
+  @override
+  State<SavedActivitiesScreen> createState() => _SavedActivitiesScreenState();
+}
+
+class _SavedActivitiesScreenState extends State<SavedActivitiesScreen> {
+  late Future<List<SavedActivityModel>> _futureActivities;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadActivities();
+  }
+
+  void _loadActivities() {
+    _futureActivities = SavedActivityService.getActivities();
+  }
+
+  Future<void> _deleteActivity(String id) async {
+    await SavedActivityService.deleteActivity(id);
+
+    setState(() {
+      _loadActivities();
+    });
+  }
+
+  String _formatDate(DateTime date) {
+    String twoDigits(int value) => value.toString().padLeft(2, '0');
+
+    return '${twoDigits(date.day)}/${twoDigits(date.month)}/${date.year} '
+        '${twoDigits(date.hour)}:${twoDigits(date.minute)}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Galeria de atividades'),
+      ),
+      body: FutureBuilder<List<SavedActivityModel>>(
+        future: _futureActivities,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(
+              child: CircularProgressIndicator(),
+            );
+          }
+
+          final activities = snapshot.data ?? [];
+
+          if (activities.isEmpty) {
+            return const Center(
+              child: Text(
+                'Nenhuma atividade salva ainda.',
+                style: TextStyle(fontSize: 18),
+              ),
+            );
+          }
+
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: activities.length,
+            itemBuilder: (context, index) {
+              final activity = activities[index];
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 14),
+                child: ExpansionTile(
+                  tilePadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
+                  title: Text(
+                    '${activity.mode} - ${activity.noteCount} notas e ${activity.beatCount} batidas',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  subtitle: Text(
+                    '${activity.instrument} • ${_formatDate(activity.createdAt)}',
+                  ),
+                  trailing: IconButton(
+                    tooltip: 'Excluir atividade',
+                    icon: const Icon(Icons.delete_outline),
+                    onPressed: () => _deleteActivity(activity.id),
+                  ),
+                  childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () {
+                          context
+                              .read<CombinatoricsController>()
+                              .applySavedActivity(activity);
+
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Atividade aplicada na tela!'),
+                            ),
+                          );
+
+                          Navigator.pop(context);
+                        },
+                        icon: const Icon(Icons.open_in_new),
+                        label: const Text('Aplicar na tela'),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _InfoLine(
+                      label: 'Notas escolhidas',
+                      value: activity.selectedNotes.join(', '),
+                    ),
+                    _InfoLine(
+                      label: 'Quantidade de notas',
+                      value: 'n = ${activity.noteCount}',
+                    ),
+                    _InfoLine(
+                      label: 'Número de batidas',
+                      value: 'b = ${activity.beatCount}',
+                    ),
+                    const Divider(),
+                    _InfoLine(
+                      label: 'Resposta 1: músicas encontradas',
+                      value: activity.studentFoundTotal.isEmpty
+                          ? '(não preenchida)'
+                          : activity.studentFoundTotal,
+                    ),
+                    _InfoLine(
+                      label: 'Resposta 2: cálculo utilizado',
+                      value: activity.studentCalculation.isEmpty
+                          ? '(não preenchida)'
+                          : activity.studentCalculation,
+                    ),
+                    _InfoLine(
+                      label: 'Resposta 3: regra geral',
+                      value: activity.studentGeneralRule.isEmpty
+                          ? '(não preenchida)'
+                          : activity.studentGeneralRule,
+                    ),
+                    if (activity.studentExplanation.isNotEmpty)
+                      _InfoLine(
+                        label: 'Explicação',
+                        value: activity.studentExplanation,
+                      ),
+                  ],
+                ),
+              );
+            },
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _InfoLine extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _InfoLine({
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 170,
+            child: Text(
+              '$label:',
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          Expanded(
+            child: SelectableText(value),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+----------------
+[user_interface\screens\thanks_screen.dart]
+
+import 'package:flutter/material.dart';
+
+class ThankYouScreen extends StatelessWidget {
+  const ThankYouScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Agradecimentos'),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: const Color(0xFFBFDBFE)),
+            ),
+            child: Column(
+              children: [
+                const Text(
+                  'Apoio',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Wrap(
+                  spacing: 16,
+                  runSpacing: 16,
+                  alignment: WrapAlignment.center,
+                  children: [
+                    Image.asset(
+                      'assets/images/IFSP_Logo.png',
+                      height: 80,
+                      fit: BoxFit.contain,
+                    ),
+                    Image.asset(
+                      'assets/images/CNPQ_Logo.png',
+                      height: 80,
+                      fit: BoxFit.contain,
+                    ),
+                    Image.asset(
+                      'assets/images/RUMO_Logo.png',
+                      height: 80,
+                      fit: BoxFit.contain,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
+      ),
+    );
+  }
+}
+
+----------------
+[user_interface\widgets\app_drawer.dart]
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../controllers/combinatorics_controller.dart';
+import '../../models/instrument.dart';
+import '../screens/instructions_screen.dart';
+import '../screens/thanks_screen.dart';
+import '../screens/saved_activities_screen.dart';
+
+class AppDrawer extends StatelessWidget {
+  const AppDrawer({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<CombinatoricsController>();
+
+    return Drawer(
+      child: ListView(
+        padding: EdgeInsets.zero,
+        children: [
+          DrawerHeader(
+            decoration: const BoxDecoration(
+              color: Color(0xFF2563EB),
+            ),
+            child: Stack(
+              children: [
+                Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        'Apoio',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(15),
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withValues(alpha: 0.20),
+                              blurRadius: 8,
+                              offset: const Offset(2, 4),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Image.asset(
+                              'assets/images/IFSP_Logo.png',
+                              height: 58,
+                              fit: BoxFit.contain,
+                            ),
+                            const SizedBox(width: 8),
+                            Image.asset(
+                              'assets/images/CNPQ_Logo.png',
+                              height: 58,
+                              fit: BoxFit.contain,
+                            ),
+                            const SizedBox(width: 8),
+                            Image.asset(
+                              'assets/images/RUMO_Logo.png',
+                              height: 58,
+                              fit: BoxFit.contain,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  right: 0,
+                  top: 0,
+                  child: IconButton(
+                    tooltip: 'Fechar menu',
+                    icon: const Icon(Icons.close, color: Colors.white),
+                    onPressed: () => Navigator.pop(context),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.music_note),
+            title: const Text(
+              'Instrumento',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: DropdownButtonFormField<Instrument>(
+                value: controller.selectedInstrument,
+                isExpanded: true,
+                decoration: const InputDecoration(
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                ),
+                items: availableInstruments.map((instrument) {
+                  return DropdownMenuItem(
+                    value: instrument,
+                    child: Text(instrument.displayName),
+                  );
+                }).toList(),
+                onChanged: (instrument) {
+                  if (instrument != null) {
+                    controller.setInstrument(instrument);
+                  }
+                },
+              ),
+            ),
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.select_all),
+            title: const Text('Selecionar todas as notas'),
+            onTap: () {
+              controller.selectAllNotes();
+              Navigator.pop(context);
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.clear),
+            title: const Text('Limpar notas escolhidas'),
+            onTap: () {
+              controller.clearNotes();
+              Navigator.pop(context);
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.collections_bookmark),
+            title: const Text('Galeria de atividades'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const SavedActivitiesScreen(),
+                ),
+              );
+            },
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.help_outline),
+            title: const Text('Instruções de uso'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const UsageInstructionsScreen(),
+                ),
+              );
+            },
+          ),
+          ListTile(
+            leading: const Icon(Icons.handshake),
+            title: const Text('Agradecimentos'),
+            onTap: () {
+              Navigator.pop(context);
+              Navigator.of(context).push(
+                MaterialPageRoute(
+                  builder: (_) => const ThankYouScreen(),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+----------------
+[user_interface\widgets\beat_count_selector.dart]
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../controllers/combinatorics_controller.dart';
+
+class BeatCountSelector extends StatelessWidget {
+  const BeatCountSelector({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<CombinatoricsController>();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            IconButton.filledTonal(
+              onPressed: () {
+                controller.setBeatCount(controller.beatCount - 1);
+              },
+              icon: const Icon(Icons.remove),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              child: Text(
+                '${controller.beatCount}',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w800,
+                    ),
+              ),
+            ),
+            IconButton.filledTonal(
+              onPressed: () {
+                controller.setBeatCount(controller.beatCount + 1);
+              },
+              icon: const Icon(Icons.add),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+----------------
+[user_interface\widgets\examples_panel.dart]
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../controllers/combinatorics_controller.dart';
+import '../../models/music_note.dart';
+
+class ExamplesPanel extends StatelessWidget {
+  const ExamplesPanel({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.watch<CombinatoricsController>();
+
+    if (c.examples.isEmpty) {
+      return const Text(
+        'Nenhum exemplo para mostrar.',
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final bool isSmallScreen = constraints.maxWidth < 650;
+            final double spacing = 10;
+            final double itemWidth = isSmallScreen
+                ? constraints.maxWidth
+                : (constraints.maxWidth - spacing) / 2;
+
+            return Wrap(
+              spacing: spacing,
+              runSpacing: 10,
+              children: List.generate(c.examples.length, (index) {
+                final melody = c.examples[index];
+                final isPlaying = c.playingExampleIndex == index;
+
+                return SizedBox(
+                  width: itemWidth,
+                  child: Container(
+                    height: 72,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 8,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isPlaying ? const Color(0xFFEEF2FF) : Colors.white,
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: isPlaying
+                            ? const Color(0xFF4F46E5)
+                            : const Color(0xFFE2E8F0),
+                        width: isPlaying ? 2 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 34,
+                          height: 34,
+                          child: IconButton.filledTonal(
+                            tooltip: 'Tocar exemplo',
+                            padding: EdgeInsets.zero,
+                            onPressed: () {
+                              context
+                                  .read<CombinatoricsController>()
+                                  .playExample(index);
+                            },
+                            icon: Icon(
+                              isPlaying ? Icons.graphic_eq : Icons.play_arrow,
+                              size: 20,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          '${index + 1}.',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
+                              children: [
+                                for (int i = 0; i < melody.length; i++)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 6),
+                                    child: _SmallMusicNote(
+                                      note: melody[i],
+                                      active: c.playingExampleIndex == index &&
+                                          c.playingNoteIndex == i,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _SmallMusicNote extends StatelessWidget {
+  final MusicNote note;
+  final bool active;
+
+  const _SmallMusicNote({
+    required this.note,
+    required this.active,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 120),
+      height: 42,
+      constraints: const BoxConstraints(
+        minWidth: 54,
+        maxWidth: 82,
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: note.color,
+        borderRadius: BorderRadius.circular(10),
+        border: active
+            ? Border.all(
+                color: Colors.black,
+                width: 3,
+              )
+            : null,
+      ),
+      child: Center(
+        child: Text(
+          note.solfege,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+----------------
+[user_interface\widgets\formation_mode_selector.dart]
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../controllers/combinatorics_controller.dart';
+import '../../models/combination_mode.dart';
+
+class FormationModeSelector extends StatelessWidget {
+  const FormationModeSelector({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<CombinatoricsController>();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final bool isVerySmall = constraints.maxWidth < 420;
+
+            return Row(
+              children: [
+                Expanded(
+                  child: _FormationModeButton(
+                    selected: controller.mode == CombinationMode.withRepetition,
+                    title: isVerySmall ? 'Com\nrepetição' : 'Com repetição',
+                    icon: Icons.repeat,
+                    selectedColor: const Color(0xFF2563EB),
+                    compact: isVerySmall,
+                    onTap: () {
+                      controller.setMode(CombinationMode.withRepetition);
+                    },
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _FormationModeButton(
+                    selected:
+                        controller.mode == CombinationMode.withoutRepetition,
+                    title: isVerySmall ? 'Sem\nrepetição' : 'Sem repetição',
+                    icon: Icons.block,
+                    selectedColor: const Color(0xFF0F766E),
+                    compact: isVerySmall,
+                    onTap: () {
+                      controller.setMode(CombinationMode.withoutRepetition);
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _FormationModeButton extends StatelessWidget {
+  final bool selected;
+  final String title;
+  final IconData icon;
+  final Color selectedColor;
+  final bool compact;
+  final VoidCallback onTap;
+
+  const _FormationModeButton({
+    required this.selected,
+    required this.title,
+    required this.icon,
+    required this.selectedColor,
+    required this.compact,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final backgroundColor =
+        selected ? selectedColor : selectedColor.withValues(alpha: 0.13);
+
+    final foregroundColor = selected ? Colors.white : const Color(0xFF0F172A);
+    final borderColor = selected ? Colors.black87 : selectedColor;
+
+    return Semantics(
+      button: true,
+      selected: selected,
+      label: '$title. ${selected ? 'Selecionado' : 'Não selecionado'}',
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          height: compact ? 56 : 60,
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 6 : 10,
+            vertical: compact ? 6 : 8,
+          ),
+          decoration: BoxDecoration(
+            color: backgroundColor,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: borderColor,
+              width: selected ? 2.2 : 1.2,
+            ),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: selectedColor.withValues(alpha: 0.22),
+                      blurRadius: 7,
+                      offset: const Offset(0, 3),
+                    ),
+                  ]
+                : [],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: compact ? 28 : 32,
+                height: compact ? 28 : 32,
+                decoration: BoxDecoration(
+                  color: selected
+                      ? Colors.white.withValues(alpha: 0.22)
+                      : selectedColor.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  icon,
+                  color: selected ? Colors.white : selectedColor,
+                  size: compact ? 18 : 20,
+                ),
+              ),
+              SizedBox(width: compact ? 5 : 8),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: compact ? 2 : 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: foregroundColor,
+                    fontSize: compact ? 12 : 14,
+                    fontWeight: FontWeight.w900,
+                    height: 1.05,
+                  ),
+                ),
+              ),
+              if (selected && !compact) ...[
+                const SizedBox(width: 6),
+                const Icon(
+                  Icons.check_circle,
+                  color: Colors.white,
+                  size: 20,
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+----------------
+[user_interface\widgets\instrument_selector.dart]
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../controllers/combinatorics_controller.dart';
+import '../../models/instrument.dart';
+
+class InstrumentSelector extends StatelessWidget {
+  const InstrumentSelector({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<CombinatoricsController>();
+
+    return DropdownButtonFormField<Instrument>(
+      value: controller.selectedInstrument,
+      isExpanded: true,
+      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w700,
+            color: Theme.of(context).colorScheme.onSurface,
+            fontSize: 18,
+          ),
+      decoration: InputDecoration(
+        border: const OutlineInputBorder(),
+        prefixIcon: const Icon(
+          Icons.music_note,
+          size: 30,
+        ),
+        label: Text(
+          'Escolha o instrumento',
+          style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                fontWeight: FontWeight.w900,
+                color: Theme.of(context).colorScheme.onSurface,
+                fontSize: 22,
+              ),
+        ),
+        floatingLabelBehavior: FloatingLabelBehavior.always,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 18,
+          vertical: 22,
+        ),
+      ),
+      items: availableInstruments.map((instrument) {
+        return DropdownMenuItem(
+          value: instrument,
+          child: Text(
+            instrument.displayName,
+            style: const TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        );
+      }).toList(),
+      onChanged: (instrument) {
+        if (instrument != null) {
+          controller.setInstrument(instrument);
+        }
+      },
+    );
+  }
+}
+
+----------------
+[user_interface\widgets\mode_controls.dart]
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../controllers/combinatorics_controller.dart';
+import '../../models/combination_mode.dart';
+
+class ModeControls extends StatelessWidget {
+  const ModeControls({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<CombinatoricsController>();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Tipo de formação das músicas',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        SegmentedButton<CombinationMode>(
+          segments: const [
+            ButtonSegment(
+              value: CombinationMode.withRepetition,
+              label: Text('Com repetição'),
+              icon: Icon(Icons.repeat),
+            ),
+            ButtonSegment(
+              value: CombinationMode.withoutRepetition,
+              label: Text('Sem repetição'),
+              icon: Icon(Icons.block),
+            ),
+          ],
+          selected: {controller.mode},
+          onSelectionChanged: (value) => controller.setMode(value.first),
+        ),
+        const SizedBox(height: 18),
+        const Text(
+          'Número de batidas da música',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            IconButton.filledTonal(
+              onPressed: () =>
+                  controller.setBeatCount(controller.beatCount - 1),
+              icon: const Icon(Icons.remove),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              child: Text(
+                '${controller.beatCount}',
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.w900,
+                    ),
+              ),
+            ),
+            IconButton.filledTonal(
+              onPressed: () =>
+                  controller.setBeatCount(controller.beatCount + 1),
+              icon: const Icon(Icons.add),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+----------------
+[user_interface\widgets\note_selector.dart]
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../controllers/combinatorics_controller.dart';
+import '../../models/music_note.dart';
+
+class NoteSelector extends StatelessWidget {
+  const NoteSelector({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = context.watch<CombinatoricsController>();
+
+    final availableNotes = controller.availableNotes.where((note) {
+      return !controller.selectedNotes
+          .any((selected) => selected.id == note.id);
+    }).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (availableNotes.isEmpty)
+          const Text(
+            'Todas as notas foram escolhidas.',
+            style: TextStyle(fontStyle: FontStyle.italic),
+          )
+        else
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final cardWidth = _calculateNoteCardWidth(
+                constraints.maxWidth,
+              );
+
+              return Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: availableNotes.map((note) {
+                  return Semantics(
+                    button: true,
+                    selected: false,
+                    label: '${note.semanticsLabel}. Não selecionada',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () async {
+                        controller.toggleNote(note);
+                        await controller.playSelectedNote(note);
+                      },
+                      child: _MusicNoteCard(
+                        note: note,
+                        selected: false,
+                        width: cardWidth,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+        const SizedBox(height: 16),
+        const Divider(),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            const Icon(Icons.check_circle, size: 20),
+            const SizedBox(width: 8),
+            Text(
+              'Notas escolhidas: ${controller.n}',
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        if (controller.selectedNotes.isEmpty)
+          const Text(
+            'Nenhuma nota escolhida ainda.',
+          )
+        else
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final cardWidth = _calculateNoteCardWidth(
+                constraints.maxWidth,
+              );
+
+              return Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: controller.selectedNotes.map((note) {
+                  return Semantics(
+                    button: true,
+                    selected: true,
+                    label: '${note.semanticsLabel}. Selecionada',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(14),
+                      onTap: () async {
+                        controller.toggleNote(note);
+                        await controller.playSelectedNote(note);
+                      },
+                      child: _MusicNoteCard(
+                        note: note,
+                        selected: true,
+                        width: cardWidth,
+                      ),
+                    ),
+                  );
+                }).toList(),
+              );
+            },
+          ),
+      ],
+    );
+  }
+
+  double _calculateNoteCardWidth(double maxWidth) {
+    const minWidth = 58.0;
+    const maxCardWidth = 86.0;
+    const spacing = 8.0;
+
+    int columns;
+
+    if (maxWidth < 360) {
+      columns = 4;
+    } else if (maxWidth < 520) {
+      columns = 5;
+    } else if (maxWidth < 760) {
+      columns = 6;
+    } else {
+      columns = 8;
+    }
+
+    final totalSpacing = spacing * (columns - 1);
+    final width = (maxWidth - totalSpacing) / columns;
+
+    return width.clamp(minWidth, maxCardWidth);
+  }
+}
+
+class _MusicNoteCard extends StatelessWidget {
+  final MusicNote note;
+  final bool selected;
+  final double width;
+
+  const _MusicNoteCard({
+    required this.note,
+    required this.selected,
+    required this.width,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final backgroundColor =
+        selected ? note.color : note.color.withValues(alpha: 0.18);
+
+    final foregroundColor = selected ? Colors.white : Colors.black87;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      width: width,
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: selected ? Colors.black87 : note.color,
+          width: selected ? 2.5 : 1.2,
+        ),
+        boxShadow: selected
+            ? [
+                BoxShadow(
+                  color: note.color.withValues(alpha: 0.22),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ]
+            : [],
+      ),
+      child: Center(
+        child: Text(
+          note.solfege,
+          textAlign: TextAlign.center,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: foregroundColor,
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+----------------
+[user_interface\widgets\result_panel.dart]
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../controllers/combinatorics_controller.dart';
+
+class ResultPanel extends StatelessWidget {
+  const ResultPanel({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.watch<CombinatoricsController>();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _VariablesSummary(
+          noteCount: c.n,
+          beatCount: c.beatCount,
+        ),
+        const SizedBox(height: 14),
+        _AnswerField(
+          label: 'Quantas músicas você encontrou?',
+          value: c.studentFoundTotal,
+          minLines: 1,
+          maxLines: 2,
+          onChanged:
+              context.read<CombinatoricsController>().setStudentFoundTotal,
+        ),
+        const SizedBox(height: 12),
+        _AnswerField(
+          label: 'Qual cálculo você utilizou para encontrar esse valor?',
+          value: c.studentCalculation,
+          minLines: 2,
+          maxLines: 3,
+          onChanged:
+              context.read<CombinatoricsController>().setStudentCalculation,
+        ),
+        const SizedBox(height: 12),
+        _AnswerField(
+          label: 'Escreva a regra geral que representa esse tipo de situação.',
+          value: c.studentGeneralRule,
+          minLines: 2,
+          maxLines: 3,
+          onChanged:
+              context.read<CombinatoricsController>().setStudentGeneralRule,
+        ),
+        const SizedBox(height: 14),
+        SizedBox(
+          width: double.infinity,
+          child: FilledButton.icon(
+            onPressed: () async {
+              await context
+                  .read<CombinatoricsController>()
+                  .saveCurrentActivity();
+
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Atividade salva na galeria!'),
+                  ),
+                );
+              }
+            },
+            icon: const Icon(Icons.save),
+            label: const Text('Salvar atividade'),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _VariablesSummary extends StatelessWidget {
+  final int noteCount;
+  final int beatCount;
+
+  const _VariablesSummary({
+    required this.noteCount,
+    required this.beatCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final bool compact = constraints.maxWidth < 420;
+
+        return Row(
+          children: [
+            Expanded(
+              child: _VariableCard(
+                symbol: 'n',
+                value: noteCount.toString(),
+                label: compact ? 'notas' : 'notas escolhidas',
+                icon: Icons.music_note,
+                color: const Color(0xFF2563EB),
+                compact: compact,
+              ),
+            ),
+            SizedBox(width: compact ? 8 : 12),
+            Expanded(
+              child: _VariableCard(
+                symbol: 'b',
+                value: beatCount.toString(),
+                label: 'batidas',
+                icon: Icons.timer,
+                color: const Color(0xFF0F766E),
+                compact: compact,
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _VariableCard extends StatelessWidget {
+  final String symbol;
+  final String value;
+  final String label;
+  final IconData icon;
+  final Color color;
+  final bool compact;
+
+  const _VariableCard({
+    required this.symbol,
+    required this.value,
+    required this.label,
+    required this.icon,
+    required this.color,
+    required this.compact,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: BoxConstraints(
+        minHeight: compact ? 68 : 84,
+      ),
+      padding: EdgeInsets.symmetric(
+        horizontal: compact ? 8 : 14,
+        vertical: compact ? 8 : 12,
+      ),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(compact ? 14 : 18),
+        border: Border.all(
+          color: color.withValues(alpha: 0.45),
+          width: 1.4,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: compact ? 26 : 32,
+            height: compact ? 26 : 32,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(compact ? 8 : 10),
+            ),
+            child: Icon(
+              icon,
+              color: Colors.white,
+              size: compact ? 14 : 17,
+            ),
+          ),
+          SizedBox(width: compact ? 8 : 12),
+          Expanded(
+            child: RichText(
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              text: TextSpan(
+                style: const TextStyle(
+                  color: Color(0xFF0F172A),
+                ),
+                children: [
+                  TextSpan(
+                    text: symbol,
+                    style: TextStyle(
+                      fontSize: compact ? 24 : 34,
+                      fontWeight: FontWeight.w900,
+                      color: color,
+                    ),
+                  ),
+                  TextSpan(
+                    text: ' = ',
+                    style: TextStyle(
+                      fontSize: compact ? 18 : 24,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  TextSpan(
+                    text: value,
+                    style: TextStyle(
+                      fontSize: compact ? 22 : 30,
+                      fontWeight: FontWeight.w900,
+                      color: color,
+                    ),
+                  ),
+                  TextSpan(
+                    text: '\n$label',
+                    style: TextStyle(
+                      fontSize: compact ? 11 : 13,
+                      fontWeight: FontWeight.w700,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnswerField extends StatefulWidget {
+  final String label;
+  final String value;
+  final int minLines;
+  final int maxLines;
+  final ValueChanged<String> onChanged;
+
+  const _AnswerField({
+    required this.label,
+    required this.value,
+    required this.minLines,
+    required this.maxLines,
+    required this.onChanged,
+  });
+
+  @override
+  State<_AnswerField> createState() => _AnswerFieldState();
+}
+
+class _AnswerFieldState extends State<_AnswerField> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.value);
+  }
+
+  @override
+  void didUpdateWidget(covariant _AnswerField oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.value != widget.value && _controller.text != widget.value) {
+      _controller.text = widget.value;
+      _controller.selection = TextSelection.collapsed(
+        offset: _controller.text.length,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: _controller,
+      minLines: widget.minLines,
+      maxLines: widget.maxLines,
+      onChanged: widget.onChanged,
+      decoration: InputDecoration(
+        labelText: widget.label,
+        alignLabelWithHint: true,
+        filled: true,
+        fillColor: Colors.white,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(14),
+          borderSide: const BorderSide(
+            color: Color(0xFF4F46E5),
+            width: 2,
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+}
+
+----------------
+[user_interface\widgets\section_card.dart]
+
+import 'package:flutter/material.dart';
+
+class SectionCard extends StatelessWidget {
+  final String title;
+  final Widget child;
+  final Widget? trailing;
+
+  const SectionCard({
+    super.key,
+    required this.title,
+    required this.child,
+    this.trailing,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final hasTitle = title.trim().isNotEmpty;
+
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (hasTitle) ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: Theme.of(context)
+                          .textTheme
+                          .titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                  if (trailing != null) trailing!,
+                ],
+              ),
+              const SizedBox(height: 12),
+            ],
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+----------------
+[utils\combinatorics_math.dart]
+
+class CombinatoricsMath {
+  static BigInt powInt(int base, int exponent) {
+    if (exponent < 0) throw ArgumentError('Expoente negativo não permitido.');
+    BigInt result = BigInt.one;
+    final BigInt b = BigInt.from(base);
+    for (int i = 0; i < exponent; i++) {
+      result *= b;
+    }
+    return result;
+  }
+
+  static BigInt factorial(int n) {
+    if (n < 0) throw ArgumentError('Fatorial de número negativo não existe.');
+    BigInt result = BigInt.one;
+    for (int i = 2; i <= n; i++) {
+      result *= BigInt.from(i);
+    }
+    return result;
+  }
+
+  static BigInt arrangementsWithoutRepetition(int n, int b) {
+    if (b < 0) throw ArgumentError('Batidas negativas não são permitidas.');
+    if (b > n) return BigInt.zero;
+    BigInt result = BigInt.one;
+    for (int i = 0; i < b; i++) {
+      result *= BigInt.from(n - i);
+    }
+    return result;
+  }
+
+  static BigInt finiteFreeWithoutRepetitionTotal(int n) {
+    BigInt total = BigInt.zero;
+    for (int b = 1; b <= n; b++) {
+      total += arrangementsWithoutRepetition(n, b);
+    }
+    return total;
+  }
+
+  static String formatBigInt(BigInt value) {
+    final s = value.toString();
+    final buffer = StringBuffer();
+    for (int i = 0; i < s.length; i++) {
+      final remaining = s.length - i;
+      buffer.write(s[i]);
+      if (remaining > 1 && remaining % 3 == 1) buffer.write('.');
+    }
+    return buffer.toString();
+  }
+}
+
+----------------
