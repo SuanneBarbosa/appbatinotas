@@ -83,7 +83,7 @@ class _FormationModeButton extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: '$title. ${selected ? 'Selecionado' : 'Não selecionado'}',
+      label: 'Selecionar formação ${title.toLowerCase().replaceAll('\n', ' ')}',
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,

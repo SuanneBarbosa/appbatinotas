@@ -120,6 +120,49 @@ class AppDrawer extends StatelessWidget {
               ),
             ),
           ),
+          ListTile(
+            leading: const Icon(Icons.visibility),
+            title: const Text(
+              'Visualização dos exemplos',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Semantics(
+                label: 'Escolher forma de visualização dos exemplos',
+                child: DropdownButtonFormField<ExamplesVisualizationMode>(
+                  initialValue: controller.visualizationMode,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: ExamplesVisualizationMode.colorWithNumber,
+                      child: Text('Cor com número'),
+                    ),
+                    DropdownMenuItem(
+                      value: ExamplesVisualizationMode.iconWithColor,
+                      child: Text('Ícone com cor'),
+                    ),
+                    DropdownMenuItem(
+                      value: ExamplesVisualizationMode.nameWithColor,
+                      child: Text('Nome com cor'),
+                    ),
+                  ],
+                  onChanged: (mode) {
+                    if (mode != null) {
+                      controller.setVisualizationMode(mode);
+                    }
+                  },
+                ),
+              ),
+            ),
+          ),
           const Divider(),
           ListTile(
             leading: const Icon(Icons.collections_bookmark),

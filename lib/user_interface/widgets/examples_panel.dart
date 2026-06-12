@@ -58,17 +58,20 @@ class ExamplesPanel extends StatelessWidget {
                         SizedBox(
                           width: 34,
                           height: 34,
-                          child: IconButton.filledTonal(
-                            tooltip: 'Tocar exemplo',
-                            padding: EdgeInsets.zero,
-                            onPressed: () {
-                              context
-                                  .read<CombinatoricsController>()
-                                  .playExample(index);
-                            },
-                            icon: Icon(
-                              isPlaying ? Icons.graphic_eq : Icons.play_arrow,
-                              size: 20,
+                          child: Semantics(
+                            label: 'Ouvir este exemplo sonoro',
+                            child: IconButton.filledTonal(
+                              tooltip: 'Tocar exemplo',
+                              padding: EdgeInsets.zero,
+                              onPressed: () {
+                                context
+                                    .read<CombinatoricsController>()
+                                    .playExample(index);
+                              },
+                              icon: Icon(
+                                isPlaying ? Icons.graphic_eq : Icons.play_arrow,
+                                size: 20,
+                              ),
                             ),
                           ),
                         ),
@@ -122,11 +125,48 @@ class _SmallMusicNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final mode = context.watch<CombinatoricsController>().visualizationMode;
+
+    Widget content;
+    switch (mode) {
+      case ExamplesVisualizationMode.colorWithNumber:
+        content = Text(
+          note.id.toString(),
+          textAlign: TextAlign.center,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+          ),
+        );
+        break;
+      case ExamplesVisualizationMode.iconWithColor:
+        content = const Icon(
+          Icons.music_note,
+          color: Colors.white,
+          size: 20,
+        );
+        break;
+      case ExamplesVisualizationMode.nameWithColor:
+        content = Text(
+          note.solfege,
+          textAlign: TextAlign.center,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        );
+        break;
+    }
+
     return AnimatedContainer(
       duration: const Duration(milliseconds: 120),
       height: 42,
       constraints: const BoxConstraints(
-        minWidth: 54,
+        minWidth: 42,
         maxWidth: 82,
       ),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
@@ -141,17 +181,7 @@ class _SmallMusicNote extends StatelessWidget {
             : null,
       ),
       child: Center(
-        child: Text(
-          note.solfege,
-          textAlign: TextAlign.center,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 12,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
+        child: content,
       ),
     );
   }

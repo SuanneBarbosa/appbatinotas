@@ -58,24 +58,28 @@ class ResultPanel extends StatelessWidget {
               context.read<CombinatoricsController>().setStudentGeneralRule,
         ),
         const SizedBox(height: 14),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: () async {
-              await context
-                  .read<CombinatoricsController>()
-                  .saveCurrentActivity();
+        Align(
+          alignment: Alignment.centerRight,
+          child: Semantics(
+            button: true,
+            label: 'Salvar a atividade atual na galeria',
+            child: FilledButton.icon(
+              onPressed: () async {
+                await context
+                    .read<CombinatoricsController>()
+                    .saveCurrentActivity();
 
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Atividade salva na galeria!'),
-                  ),
-                );
-              }
-            },
-            icon: const Icon(Icons.save),
-            label: const Text('Salvar atividade'),
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Atividade salva na galeria!'),
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.save),
+              label: const Text('Salvar atividade'),
+            ),
           ),
         ),
       ],
@@ -106,7 +110,7 @@ class _VariablesSummary extends StatelessWidget {
                 value: noteCount.toString(),
                 label: compact ? 'notas' : 'notas escolhidas',
                 icon: Icons.music_note,
-                color: const Color(0xFF2563EB),
+                color: const Color(0xFF8B5CF6),
                 compact: compact,
               ),
             ),
@@ -117,7 +121,7 @@ class _VariablesSummary extends StatelessWidget {
                 value: beatCount.toString(),
                 label: 'batidas',
                 icon: Icons.timer,
-                color: const Color(0xFF0F766E),
+                color: const Color(0xFFF59E0B),
                 compact: compact,
               ),
             ),
@@ -180,47 +184,56 @@ class _VariableCard extends StatelessWidget {
           ),
           SizedBox(width: compact ? 8 : 12),
           Expanded(
-            child: RichText(
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              text: TextSpan(
-                style: const TextStyle(
-                  color: Color(0xFF0F172A),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                RichText(
+                  text: TextSpan(
+                    style: const TextStyle(
+                      color: Color(0xFF0F172A),
+                    ),
+                    children: [
+                      TextSpan(
+                        text: symbol,
+                        style: TextStyle(
+                          fontSize: compact ? 18 : 22,
+                          fontWeight: FontWeight.w900,
+                          color: color,
+                        ),
+                      ),
+                      TextSpan(
+                        text: ' = ',
+                        style: TextStyle(
+                          fontSize: compact ? 16 : 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      TextSpan(
+                        text: value,
+                        style: TextStyle(
+                          fontSize: compact ? 18 : 22,
+                          fontWeight: FontWeight.w900,
+                          color: color,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                children: [
-                  TextSpan(
-                    text: symbol,
-                    style: TextStyle(
-                      fontSize: compact ? 24 : 34,
-                      fontWeight: FontWeight.w900,
-                      color: color,
-                    ),
-                  ),
-                  TextSpan(
-                    text: ' = ',
-                    style: TextStyle(
-                      fontSize: compact ? 18 : 24,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  TextSpan(
-                    text: value,
-                    style: TextStyle(
-                      fontSize: compact ? 22 : 30,
-                      fontWeight: FontWeight.w900,
-                      color: color,
-                    ),
-                  ),
-                  TextSpan(
-                    text: '\n$label',
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: compact ? 11 : 13,
                       fontWeight: FontWeight.w700,
+                      color: const Color(0xFF0F172A),
                       height: 1.2,
                     ),
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ],

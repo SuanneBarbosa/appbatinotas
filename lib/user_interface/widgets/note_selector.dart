@@ -38,7 +38,7 @@ class NoteSelector extends StatelessWidget {
                   return Semantics(
                     button: true,
                     selected: false,
-                    label: '${note.semanticsLabel}. Não selecionada',
+                    label: 'Tocar para adicionar a nota ${note.solfege}',
                     child: InkWell(
                       borderRadius: BorderRadius.circular(14),
                       onTap: () async {
@@ -88,7 +88,7 @@ class NoteSelector extends StatelessWidget {
                   return Semantics(
                     button: true,
                     selected: true,
-                    label: '${note.semanticsLabel}. Selecionada',
+                    label: 'Tocar para remover a nota ${note.solfege}',
                     child: InkWell(
                       borderRadius: BorderRadius.circular(14),
                       onTap: () async {
@@ -155,8 +155,8 @@ class _MusicNoteCard extends StatelessWidget {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
       width: width,
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      height: 64,
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
       decoration: BoxDecoration(
         color: backgroundColor,
         borderRadius: BorderRadius.circular(14),
@@ -174,18 +174,41 @@ class _MusicNoteCard extends StatelessWidget {
               ]
             : [],
       ),
-      child: Center(
-        child: Text(
-          note.solfege,
-          textAlign: TextAlign.center,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: foregroundColor,
-            fontSize: 13,
-            fontWeight: FontWeight.w900,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.music_note,
+                color: foregroundColor,
+                size: 16,
+              ),
+              const SizedBox(width: 2),
+              Text(
+                note.id.toString(),
+                style: TextStyle(
+                  color: foregroundColor,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
           ),
-        ),
+          const SizedBox(height: 2),
+          Text(
+            note.solfege,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: foregroundColor,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
       ),
     );
   }

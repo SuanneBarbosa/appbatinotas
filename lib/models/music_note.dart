@@ -33,22 +33,4 @@ const List<MusicNote> defaultNotes = [
       id: 5, label: '5', solfege: 'Lá', pitch: 'A4', color: Color(0xFFEA580C)),
   MusicNote(
       id: 6, label: '6', solfege: 'Si', pitch: 'B4', color: Color(0xFFDB2777)),
-  MusicNote(
-      id: 7,
-      label: '7',
-      solfege: 'Dó agudo',
-      pitch: 'C24',
-      color: Color(0xFF92400E)),
-  MusicNote(
-      id: 8,
-      label: '8',
-      solfege: 'Ré agudo',
-      pitch: 'D24',
-      color: Color(0xFF64748B)),
-  MusicNote(
-      id: 9,
-      label: '9',
-      solfege: 'Fá agudo',
-      pitch: 'F24',
-      color: Color(0xFF0891B2)),
 ];
