@@ -29,12 +29,12 @@ class HomeScreen extends StatelessWidget {
                 child: ListView(
                   children: const [
                     SectionCard(
-                      title: '',
-                      child: FormationModeSelector(),
-                    ),
-                    SectionCard(
                       title: 'Notas musicais (n)',
                       child: NoteSelector(),
+                    ),
+                    SectionCard(
+                      title: '',
+                      child: FormationModeSelector(),
                     ),
                     SectionCard(
                       title: 'Número de batidas (b)',

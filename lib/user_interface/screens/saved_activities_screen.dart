@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 
 import '../../controllers/combinatorics_controller.dart';
 import '../../models/saved_activity_model.dart';
+import 'package:flutter/services.dart';
 import '../../services/saved_activity_service.dart';
 
 class SavedActivitiesScreen extends StatefulWidget {
@@ -43,6 +44,31 @@ class _SavedActivitiesScreenState extends State<SavedActivitiesScreen> {
     );
 
     Navigator.pop(context);
+  }
+
+  void _copyAnswers(SavedActivityModel activity) {
+    final buffer = StringBuffer();
+    buffer.writeln('Quantas músicas você encontrou?');
+    buffer.writeln(activity.studentFoundTotal.isEmpty ? '(não preenchida)' : activity.studentFoundTotal);
+    buffer.writeln();
+    buffer.writeln('Qual cálculo você utilizou para encontrar esse valor?');
+    buffer.writeln(activity.studentCalculation.isEmpty ? '(não preenchida)' : activity.studentCalculation);
+    buffer.writeln();
+    buffer.writeln('Escreva a regra geral que representa esse tipo de situação.');
+    buffer.writeln(activity.studentGeneralRule.isEmpty ? '(não preenchida)' : activity.studentGeneralRule);
+    if (activity.studentExplanation.isNotEmpty) {
+      buffer.writeln();
+      buffer.writeln('Explicação:');
+      buffer.writeln(activity.studentExplanation);
+    }
+
+    Clipboard.setData(ClipboardData(text: buffer.toString()));
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Respostas copiadas!'),
+      ),
+    );
   }
 
   String _formatDate(DateTime date) {
@@ -103,33 +129,34 @@ class _SavedActivitiesScreenState extends State<SavedActivitiesScreen> {
                   trailing: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      IconButton(
-                        tooltip: 'Aplicar na tela',
-                        icon: const Icon(Icons.open_in_new),
-                        onPressed: () => _applyActivity(activity),
+                      Semantics(
+                        label: 'Aplicar esta atividade na tela principal',
+                        child: IconButton(
+                          tooltip: 'Aplicar na tela',
+                          icon: const Icon(Icons.open_in_new),
+                          onPressed: () => _applyActivity(activity),
+                        ),
                       ),
-                      IconButton(
-                        tooltip: 'Excluir atividade',
-                        icon: const Icon(Icons.delete_outline),
-                        onPressed: () => _deleteActivity(activity.id),
+                      Semantics(
+                        label: 'Copiar as respostas desta atividade',
+                        child: IconButton(
+                          tooltip: 'Copiar respostas',
+                          icon: const Icon(Icons.copy),
+                          onPressed: () => _copyAnswers(activity),
+                        ),
+                      ),
+                      Semantics(
+                        label: 'Excluir esta atividade da galeria',
+                        child: IconButton(
+                          tooltip: 'Excluir atividade',
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => _deleteActivity(activity.id),
+                        ),
                       ),
                     ],
                   ),
                   childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   children: [
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: () => _applyActivity(activity),
-                        icon: const Icon(Icons.open_in_new),
-                        label: const Text('Aplicar na tela'),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _InfoLine(
-                      label: 'Notas escolhidas',
-                      value: activity.selectedNotes.join(', '),
-                    ),
                     _InfoLine(
                       label: 'Quantidade de notas',
                       value: 'n = ${activity.noteCount}',
@@ -142,25 +169,21 @@ class _SavedActivitiesScreenState extends State<SavedActivitiesScreen> {
                       label: 'Tipo de formação',
                       value: activity.mode,
                     ),
-                    _InfoLine(
-                      label: 'Instrumento',
-                      value: activity.instrument,
-                    ),
                     const Divider(),
                     _InfoLine(
-                      label: 'Resposta 1: músicas encontradas',
+                      label: 'Músicas encontradas',
                       value: activity.studentFoundTotal.isEmpty
                           ? '(não preenchida)'
                           : activity.studentFoundTotal,
                     ),
                     _InfoLine(
-                      label: 'Resposta 2: cálculo utilizado',
+                      label: 'Cálculo utilizado',
                       value: activity.studentCalculation.isEmpty
                           ? '(não preenchida)'
                           : activity.studentCalculation,
                     ),
                     _InfoLine(
-                      label: 'Resposta 3: regra geral',
+                      label: 'Regra geral',
                       value: activity.studentGeneralRule.isEmpty
                           ? '(não preenchida)'
                           : activity.studentGeneralRule,

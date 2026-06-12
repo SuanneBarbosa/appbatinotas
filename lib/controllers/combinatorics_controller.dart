@@ -11,6 +11,8 @@ import '../services/note_audio_service.dart';
 import '../services/saved_activity_service.dart';
 import '../utils/combinatorics_math.dart';
 
+enum ExamplesVisualizationMode { colorWithNumber, iconWithColor, nameWithColor }
+
 class CombinatoricsController extends ChangeNotifier {
   final NoteAudioService audioService;
 
@@ -19,8 +21,8 @@ class CombinatoricsController extends ChangeNotifier {
     refreshExamples();
   }
 
-  static const int maxListAll = 120;
-  static const int exampleCount = 12;
+  static const int maxListAll = 64;
+  static const int exampleCount = 64;
 
   final List<MusicNote> availableNotes = defaultNotes;
   final List<MusicNote> _selectedNotes = [];
@@ -30,6 +32,8 @@ class CombinatoricsController extends ChangeNotifier {
   int _beatCount = 3;
   int? _playingExampleIndex;
   int? _playingNoteIndex;
+  ExamplesVisualizationMode _visualizationMode =
+      ExamplesVisualizationMode.colorWithNumber;
 
   String _studentFoundTotal = '';
   String _studentCalculation = '';
@@ -45,6 +49,7 @@ class CombinatoricsController extends ChangeNotifier {
 
   int? get playingExampleIndex => _playingExampleIndex;
   int? get playingNoteIndex => _playingNoteIndex;
+  ExamplesVisualizationMode get visualizationMode => _visualizationMode;
 
   String get studentFoundTotal => _studentFoundTotal;
   String get studentCalculation => _studentCalculation;
@@ -123,6 +128,11 @@ class CombinatoricsController extends ChangeNotifier {
   void setBeatCount(int value) {
     _beatCount = value.clamp(1, 12);
     refreshExamples();
+    notifyListeners();
+  }
+
+  void setVisualizationMode(ExamplesVisualizationMode mode) {
+    _visualizationMode = mode;
     notifyListeners();
   }
 
