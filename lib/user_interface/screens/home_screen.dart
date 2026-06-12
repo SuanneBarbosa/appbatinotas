@@ -1,6 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../controllers/combinatorics_controller.dart';
 import '../widgets/examples_panel.dart';
 import '../widgets/formation_mode_selector.dart';
 import '../widgets/beat_count_selector.dart';
@@ -14,7 +12,6 @@ class HomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final controller = context.watch<CombinatoricsController>();
     return Scaffold(
       drawer: const AppDrawer(),
       appBar: AppBar(

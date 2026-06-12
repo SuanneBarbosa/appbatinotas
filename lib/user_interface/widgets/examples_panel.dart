@@ -23,7 +23,7 @@ class ExamplesPanel extends StatelessWidget {
         LayoutBuilder(
           builder: (context, constraints) {
             final bool isSmallScreen = constraints.maxWidth < 650;
-            final double spacing = 10;
+            const double spacing = 10;
             final double itemWidth = isSmallScreen
                 ? constraints.maxWidth
                 : (constraints.maxWidth - spacing) / 2;

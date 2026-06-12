@@ -97,7 +97,7 @@ class AppDrawer extends StatelessWidget {
             subtitle: Padding(
               padding: const EdgeInsets.only(top: 8),
               child: DropdownButtonFormField<Instrument>(
-                value: controller.selectedInstrument,
+                initialValue: controller.selectedInstrument,
                 isExpanded: true,
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),

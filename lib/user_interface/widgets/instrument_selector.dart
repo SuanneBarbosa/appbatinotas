@@ -12,7 +12,7 @@ class InstrumentSelector extends StatelessWidget {
     final controller = context.watch<CombinatoricsController>();
 
     return DropdownButtonFormField<Instrument>(
-      value: controller.selectedInstrument,
+      initialValue: controller.selectedInstrument,
       isExpanded: true,
       style: Theme.of(context).textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.w700,

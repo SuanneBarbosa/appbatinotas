@@ -485,6 +485,7 @@ class CombinatoricsController extends ChangeNotifier {
   }
 
   void _announce(String message) {
+    // ignore: deprecated_member_use
     SemanticsService.announce(message, TextDirection.ltr);
   }
 }

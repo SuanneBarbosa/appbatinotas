@@ -28,7 +28,8 @@ class CombinaSomAlgebricoApp extends StatelessWidget {
           create: (context) => CombinatoricsController(
             audioService: context.read<NoteAudioService>(),
           ),
-          update: (_, audioService, previous) => previous ?? CombinatoricsController(audioService: audioService),
+          update: (_, audioService, previous) =>
+              previous ?? CombinatoricsController(audioService: audioService),
         ),
       ],
       child: MaterialApp(
@@ -48,15 +49,18 @@ class CombinaSomAlgebricoApp extends StatelessWidget {
           ),
           useMaterial3: true,
           scaffoldBackgroundColor: const Color(0xFFF8FAFC),
-          cardTheme: CardTheme(
+          cardTheme: CardThemeData(
             elevation: 1,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           ),
           filledButtonTheme: FilledButtonThemeData(
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              textStyle:
+                  const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
             ),
           ),
         ),
