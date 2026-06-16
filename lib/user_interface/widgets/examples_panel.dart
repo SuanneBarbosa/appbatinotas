@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:provider/provider.dart';
 
 import '../../controllers/combinatorics_controller.dart';
@@ -20,6 +21,11 @@ class ExamplesPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (!c.shouldListAll && c.examples.isNotEmpty)
+          const Padding(
+            padding: EdgeInsets.only(bottom: 16),
+            child: _WarningBanner(),
+          ),
         LayoutBuilder(
           builder: (context, constraints) {
             final bool isSmallScreen = constraints.maxWidth < 650;
@@ -110,6 +116,87 @@ class ExamplesPanel extends StatelessWidget {
           },
         ),
       ],
+    );
+  }
+}
+
+class _WarningBanner extends StatefulWidget {
+  const _WarningBanner();
+
+  @override
+  State<_WarningBanner> createState() => _WarningBannerState();
+}
+
+class _WarningBannerState extends State<_WarningBanner> {
+  late final FlutterTts _tts;
+
+  @override
+  void initState() {
+    super.initState();
+    _tts = FlutterTts();
+    _initTts();
+  }
+
+  Future<void> _initTts() async {
+    await _tts.setLanguage('pt-BR');
+    await _tts.setSpeechRate(0.48);
+    await _tts.setPitch(1.0);
+    await _tts.setVolume(1.0);
+
+    if (mounted) {
+      await _tts.speak("Limite Ultrapassado! Existem mais possibilidades além das exibidas.");
+    }
+  }
+
+  @override
+  void dispose() {
+    _tts.stop();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TweenAnimationBuilder<double>(
+      duration: const Duration(milliseconds: 600),
+      tween: Tween<double>(begin: 0.8, end: 1.0),
+      curve: Curves.elasticOut,
+      builder: (context, scale, child) {
+        return Transform.scale(
+          scale: scale,
+          child: child,
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEF2F2),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFFEF4444).withValues(alpha: 0.3),
+            width: 1.5,
+          ),
+        ),
+        child: const Row(
+          children: [
+            Icon(
+              Icons.warning_amber_rounded,
+              color: Color(0xFFEF4444),
+              size: 28,
+            ),
+            SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                'Limite Ultrapassado! Existem mais possibilidades além das exibidas.',
+                style: TextStyle(
+                  color: Color(0xFF991B1B),
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -288,6 +288,7 @@ class _AnswerFieldState extends State<_AnswerField> {
     await _tts.setSpeechRate(0.48);
     await _tts.setPitch(1.0);
     await _tts.setVolume(1.0);
+    await _tts.awaitSpeakCompletion(true);
 
     _tts.setCompletionHandler(() {
       if (mounted) {
@@ -337,7 +338,15 @@ class _AnswerFieldState extends State<_AnswerField> {
       _isSpeaking = true;
     });
 
-    await _tts.speak(textToSpeak);
+    try {
+      await _tts.speak(textToSpeak);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSpeaking = false;
+        });
+      }
+    }
   }
 
   @override
