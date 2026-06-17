@@ -147,32 +147,14 @@ class _MusicNoteCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final backgroundColor =
-        selected ? note.color : note.color.withValues(alpha: 0.18);
-
-    final foregroundColor = selected ? Colors.white : Colors.black87;
-
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
       width: width,
       height: 64,
       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
       decoration: BoxDecoration(
-        color: backgroundColor,
+        color: selected ? Colors.black.withValues(alpha: 0.05) : Colors.transparent,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: selected ? Colors.black87 : note.color,
-          width: selected ? 2.5 : 1.2,
-        ),
-        boxShadow: selected
-            ? [
-                BoxShadow(
-                  color: note.color.withValues(alpha: 0.22),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ]
-            : [],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -182,14 +164,14 @@ class _MusicNoteCard extends StatelessWidget {
             children: [
               Icon(
                 Icons.music_note,
-                color: foregroundColor,
+                color: note.color,
                 size: 16,
               ),
               const SizedBox(width: 2),
               Text(
                 note.id.toString(),
-                style: TextStyle(
-                  color: foregroundColor,
+                style: const TextStyle(
+                  color: Colors.black87,
                   fontSize: 14,
                   fontWeight: FontWeight.bold,
                 ),
@@ -202,8 +184,8 @@ class _MusicNoteCard extends StatelessWidget {
             textAlign: TextAlign.center,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: foregroundColor,
+            style: const TextStyle(
+              color: Colors.black87,
               fontSize: 13,
               fontWeight: FontWeight.w900,
             ),

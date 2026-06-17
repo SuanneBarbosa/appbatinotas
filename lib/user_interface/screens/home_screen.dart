@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+
+import '../../controllers/combinatorics_controller.dart';
 import '../widgets/examples_panel.dart';
 import '../widgets/formation_mode_selector.dart';
 import '../widgets/beat_count_selector.dart';
@@ -27,20 +30,36 @@ class HomeScreen extends StatelessWidget {
               Expanded(
                 flex: 5,
                 child: ListView(
-                  children: const [
+                  children: [
                     SectionCard(
                       title: 'Notas musicais (n)',
-                      child: NoteSelector(),
+                      trailing: Text(
+                        'n = ${context.watch<CombinatoricsController>().n}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFF8B5CF6),
+                          fontSize: 16,
+                        ),
+                      ),
+                      child: const NoteSelector(),
                     ),
-                    SectionCard(
+                    const SectionCard(
                       title: '',
                       child: FormationModeSelector(),
                     ),
                     SectionCard(
                       title: 'Número de batidas (b)',
-                      child: BeatCountSelector(),
+                      trailing: Text(
+                        'b = ${context.watch<CombinatoricsController>().beatCount}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w900,
+                          color: Color(0xFFF59E0B),
+                          fontSize: 16,
+                        ),
+                      ),
+                      child: const BeatCountSelector(),
                     ),
-                    SectionCard(
+                    const SectionCard(
                       title: 'Exemplos sonoros',
                       child: ExamplesPanel(),
                     ),
