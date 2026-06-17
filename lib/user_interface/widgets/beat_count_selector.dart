@@ -25,15 +25,32 @@ class BeatCountSelector extends StatelessWidget {
                 icon: const Icon(Icons.remove),
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              child: Semantics(
-                label: 'Número de batidas atual: ${controller.beatCount}',
-                child: Text(
-                  '${controller.beatCount}',
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 18),
+                child: Semantics(
+                  label: 'Número de batidas atual: ${controller.beatCount}',
+                  child: Wrap(
+                    alignment: WrapAlignment.center,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      Text(
+                        'Número de batidas:',
+                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                        textAlign: TextAlign.center,
                       ),
+                      const SizedBox(width: 16),
+                      Text(
+                        'b = ${controller.beatCount}',
+                        style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                              color: const Color(0xFFF59E0B),
+                            ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
