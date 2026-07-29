@@ -16,6 +16,8 @@ dependencies:
   audioplayers: ^6.6.0
   shared_preferences: ^2.3.2
   flutter_tts: ^4.2.5
+  speech_to_text: ^7.4.0
+  webview_flutter: ^4.10.0
 
 dev_dependencies:
   flutter_test:
@@ -26,6 +28,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/images/
+    - assets/images/logo/
     - assets/sounds/baixo/
     - assets/sounds/banjo/
     - assets/sounds/flauta/
@@ -37,3 +40,5 @@ flutter:
     - assets/sounds/sitar/
     - assets/sounds/trompete/
     - assets/sounds/violino/
+    - assets/sounds/others/
+    - assets/images/animacao/alto_falante.gif

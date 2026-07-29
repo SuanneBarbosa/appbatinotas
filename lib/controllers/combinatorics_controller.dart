@@ -13,11 +13,15 @@ import '../utils/combinatorics_math.dart';
 
 enum ExamplesVisualizationMode { colorWithNumber, iconWithColor, nameWithColor }
 
+enum HomeLayoutMode { columns, list }
+
 class CombinatoricsController extends ChangeNotifier {
   final NoteAudioService audioService;
 
   CombinatoricsController({required this.audioService}) {
-    _selectedNotes.addAll(defaultNotes.take(3));
+    // A atividade normal começa vazia.
+    _selectedNotes.clear();
+    _beatCount = 0;
     refreshExamples();
   }
 
@@ -29,11 +33,11 @@ class CombinatoricsController extends ChangeNotifier {
   final List<List<MusicNote>> _examples = [];
 
   CombinationMode _mode = CombinationMode.withRepetition;
-  int _beatCount = 3;
+  int _beatCount = 0;
   int? _playingExampleIndex;
   int? _playingNoteIndex;
   ExamplesVisualizationMode _visualizationMode =
-      ExamplesVisualizationMode.colorWithNumber;
+      ExamplesVisualizationMode.iconWithColor;
 
   String _studentFoundTotal = '';
   String _studentCalculation = '';
@@ -45,6 +49,7 @@ class CombinatoricsController extends ChangeNotifier {
 
   CombinationMode get mode => _mode;
   int get beatCount => _beatCount;
+  int get b => _beatCount;
   int get n => _selectedNotes.length;
 
   int? get playingExampleIndex => _playingExampleIndex;
@@ -64,17 +69,17 @@ class CombinatoricsController extends ChangeNotifier {
       n > 0 && _mode == CombinationMode.withoutRepetition && _beatCount > n;
 
   BigInt? get totalWithRepetition {
-    if (n == 0) return null;
+    if (n == 0 || _beatCount == 0) return null;
     return CombinatoricsMath.powInt(n, _beatCount);
   }
 
   BigInt? get totalWithoutRepetition {
-    if (n == 0) return null;
+    if (n == 0 || _beatCount == 0) return null;
     return CombinatoricsMath.arrangementsWithoutRepetition(n, _beatCount);
   }
 
   BigInt? get activeTotal {
-    if (n == 0) return null;
+    if (n == 0 || _beatCount == 0) return null;
 
     switch (_mode) {
       case CombinationMode.withRepetition:
@@ -126,8 +131,19 @@ class CombinatoricsController extends ChangeNotifier {
   }
 
   void setBeatCount(int value) {
-    _beatCount = value.clamp(1, 12);
+    _beatCount = value.clamp(0, 10);
     refreshExamples();
+    notifyListeners();
+  }
+
+  HomeLayoutMode _homeLayoutMode = HomeLayoutMode.columns;
+
+  HomeLayoutMode get homeLayoutMode => _homeLayoutMode;
+
+  void setHomeLayoutMode(HomeLayoutMode mode) {
+    if (_homeLayoutMode == mode) return;
+
+    _homeLayoutMode = mode;
     notifyListeners();
   }
 
@@ -161,14 +177,52 @@ class CombinatoricsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void clearStudentAnswers() {
+    _studentFoundTotal = '';
+    _studentCalculation = '';
+    _studentGeneralRule = '';
+    _studentExplanation = '';
+    notifyListeners();
+  }
+
   void refreshExamples() {
     _examples
       ..clear()
       ..addAll(_generateExamples());
   }
 
+  void prepareTutorialExample() {
+    _selectedNotes
+      ..clear()
+      ..addAll(defaultNotes.take(3));
+
+    _beatCount = 2;
+    _mode = CombinationMode.withRepetition;
+
+    clearStudentAnswers();
+    refreshExamples();
+    notifyListeners();
+  }
+
+  void resetAfterTutorial() {
+    _selectedNotes.clear();
+    _beatCount = 0;
+    _mode = CombinationMode.withRepetition;
+
+    _studentFoundTotal = '';
+    _studentCalculation = '';
+    _studentGeneralRule = '';
+    _studentExplanation = '';
+
+    _playingExampleIndex = null;
+    _playingNoteIndex = null;
+
+    refreshExamples();
+    notifyListeners();
+  }
+
   List<List<MusicNote>> _generateExamples() {
-    if (n == 0) return [];
+    if (n == 0 || _beatCount == 0) return [];
 
     final length = _beatCount;
 
@@ -390,13 +444,30 @@ class CombinatoricsController extends ChangeNotifier {
   }
 
   void applySavedActivity(SavedActivityModel activity) {
-    _selectedNotes
-      ..clear()
-      ..addAll(
-        availableNotes.where(
-          (note) => activity.selectedNoteIds.contains(note.id),
-        ),
+    _selectedNotes.clear();
+
+    // Tenta carregar usando os nomes do solfejo (selectedNotes) para compatibilidade retroativa
+    if (activity.selectedNotes.isNotEmpty) {
+      for (final solfege in activity.selectedNotes) {
+        final matchingNotes = availableNotes.where(
+          (n) => n.solfege.toLowerCase() == solfege.toLowerCase(),
+        );
+        if (matchingNotes.isNotEmpty) {
+          _selectedNotes.add(matchingNotes.first);
+        }
+      }
+    } else {
+      // Se não houver selectedNotes salvos, usa os IDs.
+      // Se houver algum ID igual a 0, sabemos que foi salvo no formato antigo (0-6).
+      // Nesse caso, mapeamos os IDs antigos (0-6) para o novo formato (1-7) somando 1.
+      final hasZero = activity.selectedNoteIds.contains(0);
+      _selectedNotes.addAll(
+        availableNotes.where((note) {
+          final targetId = hasZero ? note.id - 1 : note.id;
+          return activity.selectedNoteIds.contains(targetId);
+        }),
       );
+    }
 
     _selectedNotes.sort((a, b) => a.id.compareTo(b.id));
 
@@ -466,29 +537,11 @@ class CombinatoricsController extends ChangeNotifier {
     );
 
     buffer.writeln('');
-    buffer.writeln('2. Qual cálculo você utilizou para encontrar esse valor?');
-    buffer.writeln(
-      _studentCalculation.trim().isEmpty
-          ? '(não preenchida)'
-          : _studentCalculation.trim(),
-    );
-
-    buffer.writeln('');
-    buffer.writeln(
-      '3. Escreva a regra geral que representa esse tipo de situação.',
-    );
+    buffer.writeln('2. Escreva a regra geral:');
     buffer.writeln(
       _studentGeneralRule.trim().isEmpty
           ? '(não preenchida)'
           : _studentGeneralRule.trim(),
-    );
-
-    buffer.writeln('');
-    buffer.writeln('4. Explique com suas palavras como essa regra funciona.');
-    buffer.writeln(
-      _studentExplanation.trim().isEmpty
-          ? '(não preenchida)'
-          : _studentExplanation.trim(),
     );
 
     return buffer.toString();

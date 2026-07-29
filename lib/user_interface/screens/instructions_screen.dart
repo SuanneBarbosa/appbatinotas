@@ -13,39 +13,54 @@ class UsageInstructionsScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: const [
           _InstructionItem(
-            title: '1. Escolher notas musicais',
+            title: '1. Usar o menu lateral',
             description:
-                'Selecione as notas disponíveis. As notas escolhidas aparecem separadas na área de notas escolhidas.',
+                'Toque no ícone de menu, no canto superior esquerdo da tela, para abrir o menu lateral. Nele você pode acessar as instruções, a galeria de atividades salvas, informações sobre o aplicativo e outras opções disponíveis.',
           ),
           _InstructionItem(
-            title: '2. Escolher número de batidas',
+            title: '2. Escolher notas musicais',
             description:
-                'Escolha quantas posições, ou batidas, cada música terá.',
+                'Selecione as notas disponíveis. As notas escolhidas aparecem separadas na área de notas escolhidas. A quantidade de notas escolhidas representa o valor de n.',
           ),
           _InstructionItem(
             title: '3. Escolher o tipo de formação',
             description:
-                'Defina se as músicas serão formadas com repetição ou sem repetição de notas.',
+                'Defina se as músicas serão formadas com repetição ou sem repetição de notas. Com repetição, uma nota pode aparecer mais de uma vez. Sem repetição, cada nota pode aparecer apenas uma vez na mesma música.',
           ),
           _InstructionItem(
-            title: '4. Observar exemplos sonoros',
+            title: '4. Escolher número de batidas',
             description:
-                'O aplicativo mostra exemplos de músicas possíveis. Toque no botão de reprodução para ouvir cada exemplo.',
+                'Escolha quantas posições, ou batidas, cada combinação terá. A quantidade de batidas representa o valor de b.',
           ),
           _InstructionItem(
-            title: '5. Responder às perguntas',
+            title: '5. Observar Combinações',
             description:
-                'Na seção de resultados, responda às perguntas para explicar quantas músicas foram encontradas, qual cálculo foi usado e qual regra geral representa a situação.',
+                'O aplicativo mostra as combinações possíveis. Toque no botão de reprodução para ouvir cada combinação.',
           ),
           _InstructionItem(
-            title: '6. Salvar a atividade',
+            title: '6. Responder às perguntas',
             description:
-                'Toque no botão para salvar a atividade atual e suas respostas.',
+                'Na seção de resultados, responda às perguntas para explicar quantas músicas foram encontradas e qual regra geral representa a situação.',
           ),
           _InstructionItem(
-            title: '7. Consultar respostas na galeria',
+            title: '7. Usar o botão Símbolos',
             description:
-                'No menu lateral, abra a galeria para consultar, copiar, aplicar na tela ou excluir atividades salvas.',
+                'Toque no botão Símbolos para abrir opções de símbolos matemáticos, como n, b, multiplicação, igualdade, potência e fatorial. Esses símbolos ajudam a escrever a regra geral.',
+          ),
+          _InstructionItem(
+            title: '8. Usar o botão Limpar',
+            description:
+                'Toque no botão Limpar para apagar as respostas preenchidas nos campos da seção de resultados. Essa ação não apaga as notas escolhidas, as batidas ou os exemplos, apenas limpa os textos das respostas.',
+          ),
+          _InstructionItem(
+            title: '9. Usar o botão Salvar',
+            description:
+                'Toque no botão Salvar para guardar a atividade atual na galeria. Serão salvas as notas escolhidas, o número de batidas, o tipo de formação, o instrumento e as respostas preenchidas.',
+          ),
+          _InstructionItem(
+            title: '10. Consultar respostas na galeria',
+            description:
+                'No menu lateral, abra a galeria para consultar, copiar, aplicar na tela ou excluir atividades salvas anteriormente.',
           ),
         ],
       ),

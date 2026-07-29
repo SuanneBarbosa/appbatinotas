@@ -1,25 +1,55 @@
 [main.dart]
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'controllers/combinatorics_controller.dart';
+import 'services/combinatorics_tutorial_service.dart';
 import 'services/note_audio_service.dart';
-import 'user_interface/screens/home_screen.dart';
+import 'services/orientation_service.dart';
+import 'user_interface/screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
-  ]);
-  runApp(const CombinaSomAlgebricoApp());
+
+  bool isMobilePlatform() {
+    if (kIsWeb) {
+      return false;
+    }
+
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
+  bool orientationShown = true;
+
+  if (isMobilePlatform()) {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+
+    final orientationService = OrientationService();
+    orientationShown = await orientationService.hasShownOrientation();
+  }
+
+  runApp(
+    CombinaSomAlgebricoApp(
+      orientationShown: orientationShown,
+    ),
+  );
 }
 
 class CombinaSomAlgebricoApp extends StatelessWidget {
-  const CombinaSomAlgebricoApp({super.key});
+  final bool orientationShown;
+
+  const CombinaSomAlgebricoApp({
+    super.key,
+    required this.orientationShown,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -30,12 +60,16 @@ class CombinaSomAlgebricoApp extends StatelessWidget {
           create: (context) => CombinatoricsController(
             audioService: context.read<NoteAudioService>(),
           ),
-          update: (_, audioService, previous) => previous ?? CombinatoricsController(audioService: audioService),
+          update: (_, audioService, previous) =>
+              previous ?? CombinatoricsController(audioService: audioService),
+        ),
+        ChangeNotifierProvider(
+          create: (_) => CombinatoricsTutorialController(),
         ),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        title: 'CombinaSom Algébrico',
+        title: 'Batinotas',
         locale: const Locale('pt', 'BR'),
         supportedLocales: const [Locale('pt', 'BR')],
         localizationsDelegates: const [
@@ -50,19 +84,31 @@ class CombinaSomAlgebricoApp extends StatelessWidget {
           ),
           useMaterial3: true,
           scaffoldBackgroundColor: const Color(0xFFF8FAFC),
-          cardTheme: CardTheme(
+          cardTheme: CardThemeData(
             elevation: 1,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
           ),
           filledButtonTheme: FilledButtonThemeData(
             style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 14,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ),
-        home: const HomeScreen(),
+        home: SplashScreen(
+          orientationShown: orientationShown,
+        ),
       ),
     );
   }
@@ -72,40 +118,46 @@ class CombinaSomAlgebricoApp extends StatelessWidget {
 [controllers\combinatorics_controller.dart]
 
 import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 
 import '../models/combination_mode.dart';
 import '../models/instrument.dart';
 import '../models/music_note.dart';
+import '../models/saved_activity_model.dart';
 import '../services/note_audio_service.dart';
+import '../services/saved_activity_service.dart';
 import '../utils/combinatorics_math.dart';
 
-import '../models/saved_activity_model.dart';
-import '../services/saved_activity_service.dart';
+enum ExamplesVisualizationMode { colorWithNumber, iconWithColor, nameWithColor }
 
-import '../models/saved_activity_model.dart';
-import '../services/saved_activity_service.dart';
+enum HomeLayoutMode { columns, list }
 
 class CombinatoricsController extends ChangeNotifier {
   final NoteAudioService audioService;
 
   CombinatoricsController({required this.audioService}) {
-    _selectedNotes.addAll(defaultNotes.take(3));
+    // A atividade normal começa vazia.
+    _selectedNotes.clear();
+    _beatCount = 0;
     refreshExamples();
   }
 
-  static const int maxListAll = 120;
-  static const int exampleCount = 12;
+  static const int maxListAll = 64;
+  static const int exampleCount = 64;
 
   final List<MusicNote> availableNotes = defaultNotes;
   final List<MusicNote> _selectedNotes = [];
   final List<List<MusicNote>> _examples = [];
 
   CombinationMode _mode = CombinationMode.withRepetition;
-  int _beatCount = 3;
+  int _beatCount = 0;
   int? _playingExampleIndex;
   int? _playingNoteIndex;
+  ExamplesVisualizationMode _visualizationMode =
+      ExamplesVisualizationMode.iconWithColor;
+
   String _studentFoundTotal = '';
   String _studentCalculation = '';
   String _studentGeneralRule = '';
@@ -116,10 +168,12 @@ class CombinatoricsController extends ChangeNotifier {
 
   CombinationMode get mode => _mode;
   int get beatCount => _beatCount;
+  int get b => _beatCount;
   int get n => _selectedNotes.length;
 
   int? get playingExampleIndex => _playingExampleIndex;
   int? get playingNoteIndex => _playingNoteIndex;
+  ExamplesVisualizationMode get visualizationMode => _visualizationMode;
 
   String get studentFoundTotal => _studentFoundTotal;
   String get studentCalculation => _studentCalculation;
@@ -134,17 +188,17 @@ class CombinatoricsController extends ChangeNotifier {
       n > 0 && _mode == CombinationMode.withoutRepetition && _beatCount > n;
 
   BigInt? get totalWithRepetition {
-    if (n == 0) return null;
+    if (n == 0 || _beatCount == 0) return null;
     return CombinatoricsMath.powInt(n, _beatCount);
   }
 
   BigInt? get totalWithoutRepetition {
-    if (n == 0) return null;
+    if (n == 0 || _beatCount == 0) return null;
     return CombinatoricsMath.arrangementsWithoutRepetition(n, _beatCount);
   }
 
   BigInt? get activeTotal {
-    if (n == 0) return null;
+    if (n == 0 || _beatCount == 0) return null;
 
     switch (_mode) {
       case CombinationMode.withRepetition:
@@ -196,8 +250,24 @@ class CombinatoricsController extends ChangeNotifier {
   }
 
   void setBeatCount(int value) {
-    _beatCount = value.clamp(1, 12);
+    _beatCount = value.clamp(0, 10);
     refreshExamples();
+    notifyListeners();
+  }
+
+  HomeLayoutMode _homeLayoutMode = HomeLayoutMode.columns;
+
+  HomeLayoutMode get homeLayoutMode => _homeLayoutMode;
+
+  void setHomeLayoutMode(HomeLayoutMode mode) {
+    if (_homeLayoutMode == mode) return;
+
+    _homeLayoutMode = mode;
+    notifyListeners();
+  }
+
+  void setVisualizationMode(ExamplesVisualizationMode mode) {
+    _visualizationMode = mode;
     notifyListeners();
   }
 
@@ -226,14 +296,52 @@ class CombinatoricsController extends ChangeNotifier {
     notifyListeners();
   }
 
+  void clearStudentAnswers() {
+    _studentFoundTotal = '';
+    _studentCalculation = '';
+    _studentGeneralRule = '';
+    _studentExplanation = '';
+    notifyListeners();
+  }
+
   void refreshExamples() {
     _examples
       ..clear()
       ..addAll(_generateExamples());
   }
 
+  void prepareTutorialExample() {
+    _selectedNotes
+      ..clear()
+      ..addAll(defaultNotes.take(3));
+
+    _beatCount = 2;
+    _mode = CombinationMode.withRepetition;
+
+    clearStudentAnswers();
+    refreshExamples();
+    notifyListeners();
+  }
+
+  void resetAfterTutorial() {
+    _selectedNotes.clear();
+    _beatCount = 0;
+    _mode = CombinationMode.withRepetition;
+
+    _studentFoundTotal = '';
+    _studentCalculation = '';
+    _studentGeneralRule = '';
+    _studentExplanation = '';
+
+    _playingExampleIndex = null;
+    _playingNoteIndex = null;
+
+    refreshExamples();
+    notifyListeners();
+  }
+
   List<List<MusicNote>> _generateExamples() {
-    if (n == 0) return [];
+    if (n == 0 || _beatCount == 0) return [];
 
     final length = _beatCount;
 
@@ -432,17 +540,15 @@ class CombinatoricsController extends ChangeNotifier {
     final activity = SavedActivityModel(
       id: DateTime.now().millisecondsSinceEpoch.toString(),
       createdAt: DateTime.now(),
-
       selectedNoteIds: _selectedNotes.map((note) => note.id).toList(),
       selectedNotes: _selectedNotes.map((note) => note.solfege).toList(),
-
       noteCount: n,
       beatCount: _beatCount,
       mode: _mode.label,
       instrumentId: selectedInstrument.id,
       instrument: selectedInstrument.displayName,
 
-      // Se você não quer salvar sugestões/gabarito, deixe vazio.
+      // Mantido vazio para não salvar sugestão/gabarito.
       expectedTotal: '',
       expectedCalculation: '',
       expectedGeneralRule: '',
@@ -454,6 +560,42 @@ class CombinatoricsController extends ChangeNotifier {
     );
 
     await SavedActivityService.saveActivity(activity);
+  }
+
+  void applySavedActivity(SavedActivityModel activity) {
+    _selectedNotes
+      ..clear()
+      ..addAll(
+        availableNotes.where(
+          (note) => activity.selectedNoteIds.contains(note.id),
+        ),
+      );
+
+    _selectedNotes.sort((a, b) => a.id.compareTo(b.id));
+
+    _beatCount = activity.beatCount.clamp(1, 12);
+
+    if (activity.mode == CombinationMode.withoutRepetition.label) {
+      _mode = CombinationMode.withoutRepetition;
+    } else {
+      _mode = CombinationMode.withRepetition;
+    }
+
+    final matchingInstrument = availableInstruments.where(
+      (instrument) => instrument.id == activity.instrumentId,
+    );
+
+    if (matchingInstrument.isNotEmpty) {
+      audioService.selectedInstrument = matchingInstrument.first;
+    }
+
+    _studentFoundTotal = activity.studentFoundTotal;
+    _studentCalculation = activity.studentCalculation;
+    _studentGeneralRule = activity.studentGeneralRule;
+    _studentExplanation = activity.studentExplanation;
+
+    refreshExamples();
+    notifyListeners();
   }
 
   String finalReport() {
@@ -497,34 +639,18 @@ class CombinatoricsController extends ChangeNotifier {
     );
 
     buffer.writeln('');
-    buffer.writeln('2. Qual cálculo você utilizou para encontrar esse valor?');
-    buffer.writeln(
-      _studentCalculation.trim().isEmpty
-          ? '(não preenchida)'
-          : _studentCalculation.trim(),
-    );
-
-    buffer.writeln('');
-    buffer.writeln(
-        '3. Escreva a regra geral que representa esse tipo de situação.');
+    buffer.writeln('2. Escreva a regra geral:');
     buffer.writeln(
       _studentGeneralRule.trim().isEmpty
           ? '(não preenchida)'
           : _studentGeneralRule.trim(),
     );
 
-    buffer.writeln('');
-    buffer.writeln('4. Explique com suas palavras como essa regra funciona.');
-    buffer.writeln(
-      _studentExplanation.trim().isEmpty
-          ? '(não preenchida)'
-          : _studentExplanation.trim(),
-    );
-
     return buffer.toString();
   }
 
   void _announce(String message) {
+    // ignore: deprecated_member_use
     SemanticsService.announce(message, TextDirection.ltr);
   }
 }
@@ -655,7 +781,7 @@ class MusicNote {
 
 const List<MusicNote> defaultNotes = [
   MusicNote(
-      id: 0, label: '0', solfege: 'Dó', pitch: 'C4', color: Color(0xFF4338CA)),
+      id: 0, label: '0', solfege: 'Dó', pitch: 'C4', color: Color(0xFF78350F)),
   MusicNote(
       id: 1, label: '1', solfege: 'Ré', pitch: 'D4', color: Color(0xFF16A34A)),
   MusicNote(
@@ -668,24 +794,6 @@ const List<MusicNote> defaultNotes = [
       id: 5, label: '5', solfege: 'Lá', pitch: 'A4', color: Color(0xFFEA580C)),
   MusicNote(
       id: 6, label: '6', solfege: 'Si', pitch: 'B4', color: Color(0xFFDB2777)),
-  MusicNote(
-      id: 7,
-      label: '7',
-      solfege: 'Dó agudo',
-      pitch: 'C24',
-      color: Color(0xFF92400E)),
-  MusicNote(
-      id: 8,
-      label: '8',
-      solfege: 'Ré agudo',
-      pitch: 'D24',
-      color: Color(0xFF64748B)),
-  MusicNote(
-      id: 9,
-      label: '9',
-      solfege: 'Fá agudo',
-      pitch: 'F24',
-      color: Color(0xFF0891B2)),
 ];
 
 ----------------
@@ -776,6 +884,264 @@ class SavedActivityModel {
 }
 
 ----------------
+[services\combinatorics_tutorial_service.dart]
+
+import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
+
+import '../user_interface/widgets/vlibras_widget.dart';
+import 'orientation_service.dart';
+
+class CombinatoricsTutorialController extends ChangeNotifier {
+  int _currentStepIndex = -1;
+  List<VoidCallback> _tutorialSteps = [];
+
+  bool get isTutorialActive => _currentStepIndex < _tutorialSteps.length;
+  int get currentStepIndex => _currentStepIndex;
+  int get totalSteps => _tutorialSteps.length;
+
+  bool _isInitialized = false;
+
+  final menuKey = GlobalKey();
+  final notesKey = GlobalKey();
+  final modeKey = GlobalKey();
+  final beatKey = GlobalKey();
+  final examplesKey = GlobalKey();
+  final resultKey = GlobalKey();
+  final symbolsKey = GlobalKey();
+  final clearKey = GlobalKey();
+  final saveKey = GlobalKey();
+
+  Rect? highlightRect;
+  String guidanceText = '';
+  Alignment guidanceAlignment = Alignment.center;
+
+  final OrientationService _orientationService = OrientationService();
+
+  Future<void> start(BuildContext context) async {
+    final alreadyShown =
+        await _orientationService.hasShownCombinatoricsTutorial();
+
+    if (alreadyShown) {
+      _currentStepIndex = 999;
+      notifyListeners();
+      return;
+    }
+
+    _buildTutorialSequence();
+    _isInitialized = true;
+    nextStep();
+  }
+
+  void restart(BuildContext context) {
+    _buildTutorialSequence();
+    _isInitialized = true;
+    _currentStepIndex = -1;
+    nextStep();
+  }
+
+  void _buildTutorialSequence() {
+    _tutorialSteps = [
+      _stepVLibrasIntro,
+      _stepMenu,
+      _stepNotes,
+      _stepMode,
+      _stepBeats,
+      _stepExamples,
+      _stepResults,
+      _stepSymbols,
+      _stepClear,
+      _stepSave,
+      _stepEnd,
+    ];
+  }
+
+  void nextStep() {
+    _currentStepIndex++;
+
+    if (isTutorialActive) {
+      _tutorialSteps[_currentStepIndex]();
+    } else {
+      _finishTutorial();
+    }
+  }
+
+  void skipTutorial() {
+    _finishTutorial();
+  }
+
+  void _stepVLibrasIntro() {
+    highlightRect = null;
+    guidanceText =
+        'Ative o VLibras no ícone à direita depois toque em "Começar" ou apenas em "Começar" para seguir sem a tradução.';
+    guidanceAlignment = Alignment.center;
+    _announce(guidanceText);
+    notifyListeners();
+  }
+
+  void _stepNotes() {
+    _calculateHighlight(notesKey);
+    guidanceText =
+        'Escolha as notas musicais. A quantidade de notas escolhidas representa o valor de n.';
+    guidanceAlignment = Alignment.bottomCenter;
+    _announce(guidanceText);
+    notifyListeners();
+  }
+
+  void _stepMode() {
+    _calculateHighlight(modeKey);
+    guidanceText =
+        'Escolha o tipo de formação: com repetição ou sem repetição.';
+    guidanceAlignment = Alignment.bottomCenter;
+    _announce(guidanceText);
+    notifyListeners();
+  }
+
+  void _stepBeats() {
+    _calculateHighlight(beatKey);
+    guidanceText =
+        'Escolha o número de batidas. A quantidade de batidas representa o valor de b.';
+    guidanceAlignment = Alignment.bottomCenter;
+    _announce(guidanceText);
+    notifyListeners();
+  }
+
+  void _stepExamples() {
+    _calculateHighlight(examplesKey);
+    guidanceText =
+        'As musicas formadas ficaram agrupadas em lista com até 64 opções de combinações que podem ser reproduzidas.';
+    guidanceAlignment = Alignment.center;
+    _announce(guidanceText);
+    notifyListeners();
+  }
+
+  void _stepResults() {
+    _calculateHighlight(resultKey);
+    guidanceText =
+        'Na seção de resultados, responda às perguntas: quantas músicas foram encontradas e qual a regra geral.';
+    guidanceAlignment = Alignment.center;
+    _announce(guidanceText);
+    notifyListeners();
+  }
+
+  void _stepSymbols() {
+    _calculateHighlight(symbolsKey);
+    guidanceText = 'Use os símbolos disponíveis para escrever a regra geral.';
+    guidanceAlignment = Alignment.bottomCenter;
+    _announce(guidanceText);
+    notifyListeners();
+  }
+
+  void _stepEnd() {
+    highlightRect = null;
+    guidanceText =
+        'Tutorial finalizado. Toque em "Finalizar Tutorial" para começar a atividade.';
+    guidanceAlignment = Alignment.center;
+    _announce(guidanceText);
+    notifyListeners();
+  }
+
+  void _stepMenu() {
+    _calculateHighlight(menuKey);
+    guidanceText =
+        'No menu encontre as opções de instrumento, apresentação das combinações, galeria, instruções e informações sobre o aplicativo.';
+    guidanceAlignment = Alignment.topCenter;
+    _announce(guidanceText);
+    notifyListeners();
+  }
+
+  void _stepClear() {
+    _calculateHighlight(clearKey);
+    guidanceText =
+        'O botão Limpar apaga as respostas preenchidas nos campos da seção de resultados.';
+    guidanceAlignment = Alignment.center;
+    _announce(guidanceText);
+    notifyListeners();
+  }
+
+  void _stepSave() {
+    _calculateHighlight(saveKey);
+    guidanceText = 'O botão Salvar guarda a atividade atual na galeria.';
+    guidanceAlignment = Alignment.center;
+    _announce(guidanceText);
+    notifyListeners();
+  }
+
+  Future<void> _finishTutorial() async {
+    if (!_isInitialized) return;
+
+    _currentStepIndex = _tutorialSteps.length;
+    highlightRect = null;
+    guidanceText = '';
+
+    await _orientationService.markCombinatoricsTutorialAsShown();
+
+    _announce('Tutorial finalizado!');
+    notifyListeners();
+  }
+
+  void _calculateHighlight(GlobalKey key) {
+    Future.delayed(const Duration(milliseconds: 180), () async {
+      if (!isTutorialActive) return;
+
+      final targetContext = key.currentContext;
+
+      if (targetContext == null) {
+        highlightRect = null;
+        notifyListeners();
+        return;
+      }
+
+      // Faz a tela rolar automaticamente até o item do tutorial.
+      await Scrollable.ensureVisible(
+        targetContext,
+        duration: const Duration(milliseconds: 500),
+        curve: Curves.easeInOut,
+        alignment: 0.35,
+      );
+
+      // Espera a rolagem terminar e o layout atualizar.
+      await Future.delayed(const Duration(milliseconds: 120));
+
+      if (!isTutorialActive) return;
+
+      final renderBox = key.currentContext?.findRenderObject() as RenderBox?;
+
+      if (renderBox != null && renderBox.hasSize) {
+        final position = renderBox.localToGlobal(Offset.zero);
+
+        highlightRect = Rect.fromLTWH(
+          position.dx,
+          position.dy,
+          renderBox.size.width,
+          renderBox.size.height,
+        );
+      } else {
+        highlightRect = null;
+      }
+
+      notifyListeners();
+    });
+  }
+
+  void _announce(String message) {
+    final bool isLastStep = _currentStepIndex >= _tutorialSteps.length - 1;
+    final bool isIntroStep = _currentStepIndex <= 1;
+
+    String messageToSpeak = message;
+
+    VLibrasWidget.buscarTraducao(message);
+
+    if (isTutorialActive && !isLastStep && !isIntroStep) {
+      messageToSpeak += '. Toque em próximo para continuar.';
+    }
+
+    // ignore: deprecated_member_use
+    SemanticsService.announce(messageToSpeak, TextDirection.ltr);
+  }
+}
+
+----------------
 [services\note_audio_service.dart]
 
 import 'package:audioplayers/audioplayers.dart';
@@ -848,6 +1214,44 @@ class NoteAudioService {
 }
 
 ----------------
+[services\orientation_service.dart]
+
+import 'package:shared_preferences/shared_preferences.dart';
+
+class OrientationService {
+  static const String _orientationShownKey =
+      'combinasom_algebrico_orientation_shown';
+
+  static const String _combinatoricsTutorialShownKey =
+      'combinasom_algebrico_tutorial_shown';
+
+  Future<bool> hasShownOrientation() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_orientationShownKey) ?? false;
+  }
+
+  Future<void> markOrientationAsShown() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_orientationShownKey, true);
+  }
+
+  Future<bool> hasShownCombinatoricsTutorial() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_combinatoricsTutorialShownKey) ?? false;
+  }
+
+  Future<void> markCombinatoricsTutorialAsShown() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_combinatoricsTutorialShownKey, true);
+  }
+
+  Future<void> resetCombinatoricsTutorial() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_combinatoricsTutorialShownKey);
+  }
+}
+
+----------------
 [services\saved_activity_service.dart]
 
 import 'dart:convert';
@@ -902,11 +1306,138 @@ class SavedActivityService {
 }
 
 ----------------
+[user_interface\screens\enter_screen.dart]
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'home_tutorial_overlay.dart';
+import 'orientation_screen.dart';
+
+class EnterScreen extends StatelessWidget {
+  final bool orientationShown;
+
+  const EnterScreen({
+    super.key,
+    required this.orientationShown,
+  });
+
+  void _onEnter(BuildContext context) async {
+    // Altera a orientação para horizontal antes de navegar para o resto do app
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+
+    if (!context.mounted) return;
+
+    if (orientationShown) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => const HomeTutorialOverlay(),
+        ),
+      );
+    } else {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => const OrientationScreen(),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF2563EB),
+      body: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 24.0, vertical: 32.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  const SizedBox(height: 24),
+
+                  // App Name / Welcoming text
+                  // const Text(
+                  //   'Batinotas',
+                  //   style: TextStyle(
+                  //     fontSize: 36,
+                  //     fontWeight: FontWeight.w800,
+                  //     color: Color(0xFF1E293B),
+                  //     letterSpacing: 0.5,
+                  //   ),
+                  // ),
+                  // Smooth Hero transition from splash screen
+                  Hero(
+                    tag: 'app_logo',
+                    child: Image.asset(
+                      'assets/images/logo/musiNotas.png',
+                      width: 200,
+                      height: 200,
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(
+                          Icons.music_note_rounded,
+                          size: 500,
+                          color: Color(0xFF4F46E5),
+                        );
+                      },
+                    ),
+                  ),
+
+                  const SizedBox(height: 38),
+
+                  // Accessible Enter Button
+                  Semantics(
+                    label:
+                        'Botão Entrar. Dê dois toques para entrar no aplicativo.',
+                    button: true,
+                    enabled: true,
+                    child: ElevatedButton(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFEFF6FF),
+                        foregroundColor: const Color(0xFF312E81),
+                        shadowColor:
+                            const Color(0xFF4F46E5).withValues(alpha: 0.4),
+                        elevation: 6,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 80,
+                          vertical: 18,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                      ),
+                      onPressed: () => _onEnter(context),
+                      child: const Text(
+                        'ENTRAR',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+----------------
 [user_interface\screens\home_screen.dart]
 
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import '../../controllers/combinatorics_controller.dart';
+
 import '../widgets/examples_panel.dart';
 import '../widgets/formation_mode_selector.dart';
 import '../widgets/beat_count_selector.dart';
@@ -916,60 +1447,437 @@ import '../widgets/section_card.dart';
 import '../widgets/app_drawer.dart';
 
 class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+  final GlobalKey? menuKey;
+  final GlobalKey? notesKey;
+  final GlobalKey? modeKey;
+  final GlobalKey? beatKey;
+  final GlobalKey? examplesKey;
+  final GlobalKey? resultKey;
+  final GlobalKey? symbolsKey;
+  final GlobalKey? clearKey;
+  final GlobalKey? saveKey;
+
+  const HomeScreen({
+    super.key,
+    this.menuKey,
+    this.notesKey,
+    this.modeKey,
+    this.beatKey,
+    this.examplesKey,
+    this.resultKey,
+    this.symbolsKey,
+    this.clearKey,
+    this.saveKey,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final controller = context.watch<CombinatoricsController>();
     return Scaffold(
       drawer: const AppDrawer(),
       appBar: AppBar(
-        // title: const Text('CombinaSom Algébrico'),
         centerTitle: false,
+        toolbarHeight: 30,
+        titleSpacing: 0,
+        leadingWidth: 38,
+        iconTheme: const IconThemeData(
+          size: 24,
+        ),
+        leading: Builder(
+          builder: (context) {
+            return IconButton(
+              key: menuKey,
+              tooltip: 'Abrir menu lateral',
+              icon: const Icon(Icons.menu),
+              onPressed: () {
+                Scaffold.of(context).openDrawer();
+              },
+            );
+          },
+        ),
       ),
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 5,
-                child: ListView(
-                  children: const [
-                    SectionCard(
-                      title: '',
-                      child: FormationModeSelector(),
-                    ),
-                    SectionCard(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              flex: 5,
+              child: ListView(
+                children: [
+                  KeyedSubtree(
+                    key: notesKey,
+                    child: const SectionCard(
                       title: 'Notas musicais (n)',
                       child: NoteSelector(),
                     ),
-                    SectionCard(
-                      title: 'Número de batidas (b)',
+                  ),
+                  KeyedSubtree(
+                    key: modeKey,
+                    child: const SectionCard(
+                      title: '',
+                      child: FormationModeSelector(),
+                    ),
+                  ),
+                  KeyedSubtree(
+                    key: beatKey,
+                    child: const SectionCard(
+                      title: '',
                       child: BeatCountSelector(),
                     ),
-                    SectionCard(
-                      title: 'Exemplos sonoros',
+                  ),
+                  KeyedSubtree(
+                    key: examplesKey,
+                    child: const SectionCard(
+                      title: 'Combinações',
                       child: ExamplesPanel(),
                     ),
-                  ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              flex: 4,
+              child: ListView(
+                children: [
+                  KeyedSubtree(
+                    key: resultKey,
+                    child: SectionCard(
+                      title: 'Resultados',
+                      child: ResultPanel(
+                        symbolsKey: symbolsKey,
+                        clearKey: clearKey,
+                        saveKey: saveKey,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+----------------
+[user_interface\screens\home_tutorial_overlay.dart]
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../controllers/combinatorics_controller.dart';
+import '../../services/combinatorics_tutorial_service.dart';
+import '../widgets/hole_clipper.dart';
+import '../widgets/vlibras_widget.dart';
+import 'home_screen.dart';
+
+class HomeTutorialOverlay extends StatefulWidget {
+  const HomeTutorialOverlay({super.key});
+
+  @override
+  State<HomeTutorialOverlay> createState() => _HomeTutorialOverlayState();
+}
+
+class _HomeTutorialOverlayState extends State<HomeTutorialOverlay> {
+  @override
+  void initState() {
+    super.initState();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final tutorial = context.read<CombinatoricsTutorialController>();
+
+      final combinatorics = context.read<CombinatoricsController>();
+
+      await tutorial.start(context);
+
+      if (!mounted) return;
+
+      if (tutorial.isTutorialActive) {
+        // Durante o tutorial, apresenta um exemplo pronto.
+        combinatorics.prepareTutorialExample();
+      } else {
+        // Caso o tutorial já tenha sido visto, inicia vazio.
+        combinatorics.resetAfterTutorial();
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tutorial = context.watch<CombinatoricsTutorialController>();
+
+    final homeScreen = HomeScreen(
+      menuKey: tutorial.menuKey,
+      notesKey: tutorial.notesKey,
+      modeKey: tutorial.modeKey,
+      beatKey: tutorial.beatKey,
+      examplesKey: tutorial.examplesKey,
+      resultKey: tutorial.resultKey,
+      symbolsKey: tutorial.symbolsKey,
+      clearKey: tutorial.clearKey,
+      saveKey: tutorial.saveKey,
+    );
+
+    return Stack(
+      children: [
+        IgnorePointer(
+          ignoring: tutorial.isTutorialActive,
+          child: ExcludeSemantics(
+            excluding: tutorial.isTutorialActive,
+            child: homeScreen,
+          ),
+        ),
+
+        // Camada do tutorial.
+        if (tutorial.isTutorialActive) _buildTutorialLayer(tutorial),
+
+        // VLibras igual ao Mathnew:
+        // aparece no canto direito, depois da camada do tutorial.
+        if (tutorial.isTutorialActive)
+          const Positioned(
+            bottom: 0,
+            right: 0,
+            child: ExcludeSemantics(
+              child: VLibrasWidget(),
+            ),
+          ),
+      ],
+    );
+  }
+
+  void _finishOrSkipTutorial(
+    CombinatoricsTutorialController tutorial,
+  ) {
+    context.read<CombinatoricsController>().resetAfterTutorial();
+    tutorial.skipTutorial();
+  }
+
+  Widget _buildTutorialLayer(CombinatoricsTutorialController tutorial) {
+    final bool isLastStep =
+        tutorial.currentStepIndex == tutorial.totalSteps - 1;
+    final bool isFirstStep = tutorial.currentStepIndex == 0;
+
+    return GestureDetector(
+      onHorizontalDragEnd: (details) {
+        final bool isSwipeNext =
+            details.primaryVelocity != null && details.primaryVelocity! < 0;
+
+        if (isSwipeNext && !isFirstStep && !isLastStep) {
+          tutorial.nextStep();
+        }
+      },
+      child: Semantics(
+        label: 'Camada do tutorial',
+        scopesRoute: true,
+        explicitChildNodes: true,
+        child: Stack(
+          children: [
+            GestureDetector(
+              onTap: () {},
+              child: ClipPath(
+                clipper: HoleClipper(tutorial.highlightRect),
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.75),
                 ),
               ),
-              const SizedBox(width: 16),
-              Expanded(
-                flex: 4,
-                child: ListView(
-                  children: const [
-                    SectionCard(
-                      title: 'Resultados',
-                      child: ResultPanel(),
-                    ),
-                  ],
-                ),
+            ),
+            _buildGuidanceBox(tutorial),
+            if (!isLastStep) _buildNextButton(tutorial),
+            if (!isLastStep) _buildSkipButton(tutorial),
+            if (isLastStep) _buildFinishButton(tutorial),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGuidanceBox(CombinatoricsTutorialController tutorial) {
+    if (tutorial.guidanceText.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    final double fontSize = (screenWidth * 0.024).clamp(15.0, 26.0);
+    final double maxBoxWidth = screenWidth * 0.70;
+
+    if (tutorial.guidanceAlignment == Alignment.center ||
+        tutorial.highlightRect == null) {
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          width: maxBoxWidth,
+          margin: const EdgeInsets.only(left: 40),
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(15),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.2),
+                blurRadius: 10,
+                spreadRadius: 2,
               ),
             ],
           ),
+          child: Semantics(
+            liveRegion: true,
+            child: Text(
+              tutorial.guidanceText,
+              style: TextStyle(
+                fontSize: fontSize,
+                color: const Color(0xFF2563EB),
+                fontWeight: FontWeight.w900,
+                decoration: TextDecoration.none,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+
+    final rect = tutorial.highlightRect!;
+    double top;
+
+    if (tutorial.guidanceAlignment == Alignment.topCenter) {
+      top = rect.bottom + 20;
+    } else {
+      top = rect.top - 130;
+    }
+
+    if (top < 10) top = 10;
+    if (top > screenHeight - 120) top = screenHeight - 120;
+
+    return Positioned(
+      top: top,
+      left: 30,
+      width: maxBoxWidth - 30,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.2),
+              blurRadius: 8,
+            ),
+          ],
+        ),
+        child: Semantics(
+          liveRegion: true,
+          child: Text(
+            tutorial.guidanceText,
+            style: TextStyle(
+              fontSize: fontSize,
+              color: const Color(0xFF2563EB),
+              fontWeight: FontWeight.w900,
+              decoration: TextDecoration.none,
+            ),
+            textAlign: TextAlign.center,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNextButton(CombinatoricsTutorialController tutorial) {
+    final bool isWelcomeStep = tutorial.currentStepIndex == 0;
+    final screenWidth = MediaQuery.of(context).size.width;
+
+    final double btnFontSize = (screenWidth * 0.022).clamp(16.0, 28.0);
+    final double padH = (screenWidth * 0.03).clamp(24.0, 50.0);
+    final double padV = (screenWidth * 0.015).clamp(12.0, 24.0);
+
+    return Positioned(
+      bottom: 20,
+
+      // Igual ao Mathnew:
+      // afasta o botão do canto direito para não ficar embaixo do VLibras.
+      right: (screenWidth * 0.25) + 20,
+
+      child: Semantics(
+        button: true,
+        label: isWelcomeStep ? 'Começar tutorial' : 'Próximo passo do tutorial',
+        child: ElevatedButton(
+          onPressed: tutorial.nextStep,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF2563EB),
+            foregroundColor: Colors.white,
+            padding: EdgeInsets.symmetric(
+              horizontal: padH,
+              vertical: padV,
+            ),
+            textStyle: TextStyle(
+              fontSize: btnFontSize,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          child: Text(isWelcomeStep ? 'Começar' : 'Próximo'),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSkipButton(CombinatoricsTutorialController tutorial) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final double fontSize = (screenWidth * 0.022).clamp(16.0, 28.0);
+
+    return Positioned(
+      bottom: 20,
+      left: 20,
+      child: TextButton(
+        onPressed: () {
+          _finishOrSkipTutorial(tutorial);
+        },
+        child: Text(
+          'Pular Tutorial',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.w900,
+            fontSize: fontSize,
+            decoration: TextDecoration.none,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFinishButton(CombinatoricsTutorialController tutorial) {
+    final screenWidth = MediaQuery.of(context).size.width;
+
+    final double btnFontSize = (screenWidth * 0.022).clamp(16.0, 28.0);
+    final double padH = (screenWidth * 0.03).clamp(24.0, 50.0);
+    final double padV = (screenWidth * 0.015).clamp(12.0, 24.0);
+
+    return Positioned(
+      bottom: 20,
+
+      // Também afasta o botão Finalizar do VLibras.
+      right: (screenWidth * 0.25) + 20,
+
+      child: Semantics(
+        button: true,
+        label: 'Finalizar tutorial',
+        child: ElevatedButton(
+          onPressed: () {
+            _finishOrSkipTutorial(tutorial);
+          },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF16A34A),
+            foregroundColor: Colors.white,
+            padding: EdgeInsets.symmetric(
+              horizontal: padH,
+              vertical: padV,
+            ),
+            textStyle: TextStyle(
+              fontSize: btnFontSize,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          child: const Text('Finalizar Tutorial'),
         ),
       ),
     );
@@ -994,34 +1902,54 @@ class UsageInstructionsScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: const [
           _InstructionItem(
-            title: '1. Escolha o instrumento',
+            title: '1. Usar o menu lateral',
             description:
-                'No menu lateral, selecione o instrumento que será usado para tocar as notas musicais.',
+                'Toque no ícone de menu, no canto superior esquerdo da tela, para abrir o menu lateral. Nele você pode acessar as instruções, a galeria de atividades salvas, informações sobre o aplicativo e outras opções disponíveis.',
           ),
           _InstructionItem(
-            title: '2. Escolha o tipo de formação',
+            title: '2. Escolher notas musicais',
             description:
-                'Defina se as músicas serão formadas com repetição ou sem repetição de notas.',
+                'Selecione as notas disponíveis. As notas escolhidas aparecem separadas na área de notas escolhidas. A quantidade de notas escolhidas representa o valor de n.',
           ),
           _InstructionItem(
-            title: '3. Defina o número de batidas',
+            title: '3. Escolher o tipo de formação',
             description:
-                'Escolha quantas posições, ou batidas, cada música terá.',
+                'Defina se as músicas serão formadas com repetição ou sem repetição de notas. Com repetição, uma nota pode aparecer mais de uma vez. Sem repetição, cada nota pode aparecer apenas uma vez na mesma música.',
           ),
           _InstructionItem(
-            title: '4. Escolha as notas musicais',
+            title: '4. Escolher número de batidas',
             description:
-                'Selecione as notas disponíveis. As notas escolhidas aparecem separadas na área de notas escolhidas.',
+                'Escolha quantas posições, ou batidas, cada combinação terá. A quantidade de batidas representa o valor de b.',
           ),
           _InstructionItem(
-            title: '5. Observe os exemplos sonoros',
+            title: '5. Observar Combinações',
             description:
-                'O aplicativo mostra exemplos de músicas possíveis. Toque no botão de reprodução para ouvir cada exemplo.',
+                'O aplicativo mostra as combinações possíveis. Toque no botão de reprodução para ouvir cada combinação.',
           ),
           _InstructionItem(
-            title: '6. Registre o raciocínio',
+            title: '6. Responder às perguntas',
             description:
-                'Na seção de resultados, responda às perguntas para explicar quantas músicas foram encontradas, qual cálculo foi usado e qual regra geral representa a situação.',
+                'Na seção de resultados, responda às perguntas para explicar quantas músicas foram encontradas e qual regra geral representa a situação.',
+          ),
+          _InstructionItem(
+            title: '7. Usar o botão Símbolos',
+            description:
+                'Toque no botão Símbolos para abrir opções de símbolos matemáticos, como n, b, multiplicação, igualdade, potência e fatorial. Esses símbolos ajudam a escrever a regra geral.',
+          ),
+          _InstructionItem(
+            title: '8. Usar o botão Limpar',
+            description:
+                'Toque no botão Limpar para apagar as respostas preenchidas nos campos da seção de resultados. Essa ação não apaga as notas escolhidas, as batidas ou os exemplos, apenas limpa os textos das respostas.',
+          ),
+          _InstructionItem(
+            title: '9. Usar o botão Salvar',
+            description:
+                'Toque no botão Salvar para guardar a atividade atual na galeria. Serão salvas as notas escolhidas, o número de batidas, o tipo de formação, o instrumento e as respostas preenchidas.',
+          ),
+          _InstructionItem(
+            title: '10. Consultar respostas na galeria',
+            description:
+                'No menu lateral, abra a galeria para consultar, copiar, aplicar na tela ou excluir atividades salvas anteriormente.',
           ),
         ],
       ),
@@ -1068,15 +1996,106 @@ class _InstructionItem extends StatelessWidget {
 }
 
 ----------------
-[user_interface\screens\saved_activities_screen.dart]
+[user_interface\screens\orientation_screen.dart]
 
 import 'package:flutter/material.dart';
 
-import '../../models/saved_activity_model.dart';
-import '../../services/saved_activity_service.dart';
-import 'package:provider/provider.dart';
+import '../../services/orientation_service.dart';
+import 'home_tutorial_overlay.dart';
 
+class OrientationScreen extends StatelessWidget {
+  const OrientationScreen({super.key});
+
+  Future<void> _onContinue(BuildContext context) async {
+    final orientationService = OrientationService();
+    await orientationService.markOrientationAsShown();
+
+    if (context.mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => const HomeTutorialOverlay(),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const String titulo = 'Orientação do Dispositivo.';
+    const String conteudo =
+        'Antes de utilizar o aplicativo, posicione o celular na sua mão, em modo paisagem, girando no sentido anti-horário.';
+    const String instrucaoAcessibilidade =
+        'Clique no botão OK abaixo para fechar esta tela.';
+
+    const String fullSemanticLabel =
+        '$titulo $conteudo $instrucaoAcessibilidade';
+
+    return Scaffold(
+      backgroundColor: const Color.fromRGBO(220, 247, 255, 1.0),
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Semantics(
+            label: fullSemanticLabel,
+            container: true,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const ExcludeSemantics(
+                  child: Text(
+                    titulo,
+                    style: TextStyle(
+                      fontSize: 28,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 20),
+                const ExcludeSemantics(
+                  child: Text(
+                    conteudo,
+                    style: TextStyle(
+                      fontSize: 18,
+                      height: 1.5,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ),
+                const SizedBox(height: 40),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 50,
+                      vertical: 15,
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  onPressed: () => _onContinue(context),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+----------------
+[user_interface\screens\saved_activities_screen.dart]
+
+import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import '../../utils/combinatorics_math.dart';
 import '../../controllers/combinatorics_controller.dart';
+import '../../models/saved_activity_model.dart';
+import 'package:flutter/services.dart';
+import '../../services/saved_activity_service.dart';
 
 class SavedActivitiesScreen extends StatefulWidget {
   const SavedActivitiesScreen({super.key});
@@ -1106,11 +2125,100 @@ class _SavedActivitiesScreenState extends State<SavedActivitiesScreen> {
     });
   }
 
+  void _applyActivity(SavedActivityModel activity) {
+    context.read<CombinatoricsController>().applySavedActivity(activity);
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Atividade aplicada na tela!'),
+      ),
+    );
+
+    Navigator.pop(context);
+  }
+
+  void _copyAnswers(SavedActivityModel activity) {
+    final buffer = StringBuffer();
+    buffer.writeln('Quantas músicas você encontrou?');
+    buffer.writeln(activity.studentFoundTotal.isEmpty
+        ? '(não preenchida)'
+        : activity.studentFoundTotal);
+    buffer.writeln();
+    buffer.writeln('Escreva a regra geral.');
+    buffer.writeln(activity.studentGeneralRule.isEmpty
+        ? '(não preenchida)'
+        : activity.studentGeneralRule);
+    if (activity.studentExplanation.isNotEmpty) {
+      buffer.writeln();
+      buffer.writeln('Explicação:');
+      buffer.writeln(activity.studentExplanation);
+    }
+
+    Clipboard.setData(ClipboardData(text: buffer.toString()));
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Respostas copiadas!'),
+      ),
+    );
+  }
+
   String _formatDate(DateTime date) {
     String twoDigits(int value) => value.toString().padLeft(2, '0');
 
     return '${twoDigits(date.day)}/${twoDigits(date.month)}/${date.year} '
         '${twoDigits(date.hour)}:${twoDigits(date.minute)}';
+  }
+
+  String _onlyNumbers(String value) {
+    final matches = RegExp(r'\d+').allMatches(value);
+
+    return matches.map((match) => match.group(0)).join();
+  }
+
+  BigInt? _expectedTotalForActivity(SavedActivityModel activity) {
+    final int n = activity.noteCount;
+    final int b = activity.beatCount;
+
+    if (n <= 0 || b <= 0) {
+      return null;
+    }
+
+    if (activity.mode == 'Com repetição') {
+      return CombinatoricsMath.powInt(n, b);
+    }
+
+    if (activity.mode == 'Sem repetição') {
+      if (b > n) {
+        return BigInt.zero;
+      }
+
+      return CombinatoricsMath.arrangementsWithoutRepetition(n, b);
+    }
+
+    return null;
+  }
+
+  bool? _isStudentTotalCorrect(SavedActivityModel activity) {
+    final expectedTotal = _expectedTotalForActivity(activity);
+
+    if (expectedTotal == null) {
+      return null;
+    }
+
+    final typedNumbers = _onlyNumbers(activity.studentFoundTotal);
+
+    if (typedNumbers.isEmpty) {
+      return null;
+    }
+
+    final studentTotal = BigInt.tryParse(typedNumbers);
+
+    if (studentTotal == null) {
+      return null;
+    }
+
+    return studentTotal == expectedTotal;
   }
 
   @override
@@ -1161,38 +2269,37 @@ class _SavedActivitiesScreenState extends State<SavedActivitiesScreen> {
                   subtitle: Text(
                     '${activity.instrument} • ${_formatDate(activity.createdAt)}',
                   ),
-                  trailing: IconButton(
-                    tooltip: 'Excluir atividade',
-                    icon: const Icon(Icons.delete_outline),
-                    onPressed: () => _deleteActivity(activity.id),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Semantics(
+                        label: 'Aplicar esta atividade na tela principal',
+                        child: IconButton(
+                          tooltip: 'Aplicar na tela',
+                          icon: const Icon(Icons.open_in_new),
+                          onPressed: () => _applyActivity(activity),
+                        ),
+                      ),
+                      Semantics(
+                        label: 'Copiar as respostas desta atividade',
+                        child: IconButton(
+                          tooltip: 'Copiar respostas',
+                          icon: const Icon(Icons.copy),
+                          onPressed: () => _copyAnswers(activity),
+                        ),
+                      ),
+                      Semantics(
+                        label: 'Excluir esta atividade da galeria',
+                        child: IconButton(
+                          tooltip: 'Excluir atividade',
+                          icon: const Icon(Icons.delete_outline),
+                          onPressed: () => _deleteActivity(activity.id),
+                        ),
+                      ),
+                    ],
                   ),
                   childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   children: [
-                    SizedBox(
-                      width: double.infinity,
-                      child: FilledButton.icon(
-                        onPressed: () {
-                          context
-                              .read<CombinatoricsController>()
-                              .applySavedActivity(activity);
-
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Atividade aplicada na tela!'),
-                            ),
-                          );
-
-                          Navigator.pop(context);
-                        },
-                        icon: const Icon(Icons.open_in_new),
-                        label: const Text('Aplicar na tela'),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-                    _InfoLine(
-                      label: 'Notas escolhidas',
-                      value: activity.selectedNotes.join(', '),
-                    ),
                     _InfoLine(
                       label: 'Quantidade de notas',
                       value: 'n = ${activity.noteCount}',
@@ -1201,21 +2308,20 @@ class _SavedActivitiesScreenState extends State<SavedActivitiesScreen> {
                       label: 'Número de batidas',
                       value: 'b = ${activity.beatCount}',
                     ),
-                    const Divider(),
                     _InfoLine(
-                      label: 'Resposta 1: músicas encontradas',
+                      label: 'Tipo de formação',
+                      value: activity.mode,
+                    ),
+                    const Divider(),
+                    _InfoLineWithStatus(
+                      label: 'Músicas encontradas',
                       value: activity.studentFoundTotal.isEmpty
                           ? '(não preenchida)'
                           : activity.studentFoundTotal,
+                      isCorrect: _isStudentTotalCorrect(activity),
                     ),
                     _InfoLine(
-                      label: 'Resposta 2: cálculo utilizado',
-                      value: activity.studentCalculation.isEmpty
-                          ? '(não preenchida)'
-                          : activity.studentCalculation,
-                    ),
-                    _InfoLine(
-                      label: 'Resposta 3: regra geral',
+                      label: 'Regra geral',
                       value: activity.studentGeneralRule.isEmpty
                           ? '(não preenchida)'
                           : activity.studentGeneralRule,
@@ -1270,67 +2376,348 @@ class _InfoLine extends StatelessWidget {
   }
 }
 
+class _AnswerStatusText extends StatelessWidget {
+  final bool? isCorrect;
+
+  const _AnswerStatusText({
+    required this.isCorrect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (isCorrect == null) {
+      return const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.help_outline,
+            size: 18,
+            color: Color(0xFF64748B),
+          ),
+          SizedBox(width: 4),
+          Text(
+            'Resposta não conferida',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF64748B),
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (isCorrect == true) {
+      return const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.check_circle,
+            size: 18,
+            color: Color(0xFF16A34A),
+          ),
+          SizedBox(width: 4),
+          Text(
+            'Resposta correta',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF16A34A),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return const Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.cancel,
+          size: 18,
+          color: Color(0xFFDC2626),
+        ),
+        SizedBox(width: 4),
+        Text(
+          'Resposta incorreta',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFFDC2626),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _InfoLineWithStatus extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool? isCorrect;
+
+  const _InfoLineWithStatus({
+    required this.label,
+    required this.value,
+    required this.isCorrect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 170,
+            child: Text(
+              '$label:',
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SelectableText(value),
+                _AnswerStatusText(
+                  isCorrect: isCorrect,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+----------------
+[user_interface\screens\splash_screen.dart]
+
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'enter_screen.dart';
+
+class SplashScreen extends StatefulWidget {
+  final bool orientationShown;
+
+  const SplashScreen({
+    super.key,
+    required this.orientationShown,
+  });
+
+  @override
+  State<SplashScreen> createState() => _SplashScreenState();
+}
+
+class _SplashScreenState extends State<SplashScreen> {
+  double _opacity = 0.0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Fade in animation trigger
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        setState(() {
+          _opacity = 1.0;
+        });
+      }
+    });
+
+    // Auto navigate after 3 seconds
+    _timer = Timer(const Duration(seconds: 3), _navigateToEnterScreen);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  void _navigateToEnterScreen() {
+    if (mounted) {
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => EnterScreen(
+            orientationShown: widget.orientationShown,
+          ),
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: const Color(0xFF2563EB),
+      body: Stack(
+        children: [
+          // Centered main logo with fade-in effect
+          Center(
+            child: AnimatedOpacity(
+              opacity: _opacity,
+              duration: const Duration(milliseconds: 1000),
+              curve: Curves.easeInOut,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  AnimatedScale(
+                    scale: _opacity == 1.0
+                        ? 1.0
+                        : 0.7, // Inicia em 0.7 do tamanho original e cresce até 1.0
+                    duration: const Duration(milliseconds: 5000),
+                    curve: Curves.easeOutBack,
+                    child: Hero(
+                      tag: 'app_logo',
+                      child: Image.asset(
+                        'assets/images/logo/musiNotas.png',
+                        width: 200,
+                        height: 200,
+                        fit: BoxFit.contain,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const Icon(
+                            Icons.music_note_rounded,
+                            size: 200,
+                            color: Color(0xFF4F46E5),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  // const Text(
+                  //   'Batinotas',
+                  //   style: TextStyle(
+                  //     fontSize: 32,
+                  //     fontWeight: FontWeight.w800,
+                  //     color: Color(0xFF1E293B),
+                  //     letterSpacing: 0.5,
+                  //   ),
+                  // ),
+                ],
+              ),
+            ),
+          ),
+
+          // Supporters logo in the bottom area (centered badge)
+          Positioned(
+            bottom: 24,
+            left: 24,
+            right: 24,
+            child: AnimatedOpacity(
+              opacity: _opacity,
+              duration: const Duration(milliseconds: 1200),
+              curve: Curves.easeInOut,
+              child: Center(
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(15),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.15),
+                        blurRadius: 8,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      _buildSupporterLogo('assets/images/CNPQ_Logo.png'),
+                      const SizedBox(width: 16),
+                      _buildSupporterLogo('assets/images/IFSP_Logo.png'),
+                      const SizedBox(width: 16),
+                      _buildSupporterLogo('assets/images/RUMO_Logo.png'),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSupporterLogo(String assetPath) {
+    return Image.asset(
+      assetPath,
+      height: 56,
+      fit: BoxFit.contain,
+      errorBuilder: (context, error, stackTrace) {
+        return const SizedBox.shrink();
+      },
+    );
+  }
+}
+
 ----------------
 [user_interface\screens\thanks_screen.dart]
 
 import 'package:flutter/material.dart';
 
 class ThankYouScreen extends StatelessWidget {
-  const ThankYouScreen({super.key});
+  const ThankYouScreen({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Agradecimentos'),
+        title: const Text("Agradecimentos"),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFBFDBFE)),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Center(
+          child: Card(
+            elevation: 6,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
             ),
-            child: Column(
-              children: [
-                const Text(
-                  'Apoio',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w900,
+            color: Colors.blueAccent,
+            child: const Padding(
+              padding: EdgeInsets.all(20.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  SizedBox(height: 20),
+                  Text(
+                    "Versão Original",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white70,
+                    ),
                   ),
-                ),
-                const SizedBox(height: 14),
-                Wrap(
-                  spacing: 16,
-                  runSpacing: 16,
-                  alignment: WrapAlignment.center,
-                  children: [
-                    Image.asset(
-                      'assets/images/IFSP_Logo.png',
-                      height: 80,
-                      fit: BoxFit.contain,
-                    ),
-                    Image.asset(
-                      'assets/images/CNPQ_Logo.png',
-                      height: 80,
-                      fit: BoxFit.contain,
-                    ),
-                    Image.asset(
-                      'assets/images/RUMO_Logo.png',
-                      height: 80,
-                      fit: BoxFit.contain,
-                    ),
-                  ],
-                ),
-              ],
+                  SizedBox(height: 10),
+                  Text(
+                    "Luis Fernando Pacheco Pereira\n"
+                    "Solange Hassan Ahmad Ali Fernandes\n"
+                    "Suanne Almeida Barbosa\n"
+                    "Talita Araujo Salgado Faustino",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(fontSize: 18, color: Colors.white),
+                  ),
+                  SizedBox(height: 20),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 20),
-        ],
+        ),
       ),
     );
   }
@@ -1438,7 +2825,7 @@ class AppDrawer extends StatelessWidget {
             subtitle: Padding(
               padding: const EdgeInsets.only(top: 8),
               child: DropdownButtonFormField<Instrument>(
-                value: controller.selectedInstrument,
+                initialValue: controller.selectedInstrument,
                 isExpanded: true,
                 decoration: const InputDecoration(
                   border: OutlineInputBorder(),
@@ -1461,22 +2848,48 @@ class AppDrawer extends StatelessWidget {
               ),
             ),
           ),
-          const Divider(),
           ListTile(
-            leading: const Icon(Icons.select_all),
-            title: const Text('Selecionar todas as notas'),
-            onTap: () {
-              controller.selectAllNotes();
-              Navigator.pop(context);
-            },
-          ),
-          ListTile(
-            leading: const Icon(Icons.clear),
-            title: const Text('Limpar notas escolhidas'),
-            onTap: () {
-              controller.clearNotes();
-              Navigator.pop(context);
-            },
+            leading: const Icon(Icons.visibility),
+            title: const Text(
+              'Tipo de Visualização',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+            subtitle: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Semantics(
+                label: 'Escolher forma de visualização das combinações',
+                child: DropdownButtonFormField<ExamplesVisualizationMode>(
+                  initialValue: controller.visualizationMode,
+                  isExpanded: true,
+                  decoration: const InputDecoration(
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 10,
+                    ),
+                  ),
+                  items: const [
+                    DropdownMenuItem(
+                      value: ExamplesVisualizationMode.colorWithNumber,
+                      child: Text('Cor e número'),
+                    ),
+                    DropdownMenuItem(
+                      value: ExamplesVisualizationMode.iconWithColor,
+                      child: Text('Ícone com cor'),
+                    ),
+                    DropdownMenuItem(
+                      value: ExamplesVisualizationMode.nameWithColor,
+                      child: Text('Nome e cor'),
+                    ),
+                  ],
+                  onChanged: (mode) {
+                    if (mode != null) {
+                      controller.setVisualizationMode(mode);
+                    }
+                  },
+                ),
+              ),
+            ),
           ),
           const Divider(),
           ListTile(
@@ -1533,6 +2946,8 @@ import '../../controllers/combinatorics_controller.dart';
 class BeatCountSelector extends StatelessWidget {
   const BeatCountSelector({super.key});
 
+  static const Color _bColor = Color(0xFFF59E0B);
+
   @override
   Widget build(BuildContext context) {
     final controller = context.watch<CombinatoricsController>();
@@ -1541,27 +2956,61 @@ class BeatCountSelector extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            IconButton.filledTonal(
-              onPressed: () {
-                controller.setBeatCount(controller.beatCount - 1);
-              },
-              icon: const Icon(Icons.remove),
+            const Icon(Icons.timer, size: 20),
+            const SizedBox(width: 8),
+            const Text(
+              'Número de batidas:',
+              style: TextStyle(
+                fontWeight: FontWeight.w900,
+              ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
+            const SizedBox(width: 16),
+            Text(
+              'b = ${controller.b}',
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+                color: _bColor,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Semantics(
+              button: true,
+              label: 'Diminuir número de batidas',
+              child: IconButton.filledTonal(
+                onPressed: () {
+                  controller.setBeatCount(controller.beatCount - 1);
+                },
+                icon: const Icon(Icons.remove),
+              ),
+            ),
+            const SizedBox(width: 18),
+            Semantics(
+              label: 'Número de batidas atual: ${controller.beatCount}',
               child: Text(
                 '${controller.beatCount}',
                 style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                       fontWeight: FontWeight.w800,
+                      color: _bColor,
                     ),
               ),
             ),
-            IconButton.filledTonal(
-              onPressed: () {
-                controller.setBeatCount(controller.beatCount + 1);
-              },
-              icon: const Icon(Icons.add),
+            const SizedBox(width: 18),
+            Semantics(
+              button: true,
+              label: 'Aumentar número de batidas',
+              child: IconButton.filledTonal(
+                onPressed: () {
+                  controller.setBeatCount(controller.beatCount + 1);
+                },
+                icon: const Icon(Icons.add),
+              ),
             ),
           ],
         ),
@@ -1574,13 +3023,22 @@ class BeatCountSelector extends StatelessWidget {
 [user_interface\widgets\examples_panel.dart]
 
 import 'package:flutter/material.dart';
+import 'package:audioplayers/audioplayers.dart';
+//import 'package:flutter_tts/flutter_tts.dart';
 import 'package:provider/provider.dart';
 
 import '../../controllers/combinatorics_controller.dart';
 import '../../models/music_note.dart';
+import 'package:flutter/semantics.dart';
+import 'dart:math' as math;
+import '../../models/combination_mode.dart';
 
 class ExamplesPanel extends StatelessWidget {
   const ExamplesPanel({super.key});
+
+  String _melodySemanticsLabel(List<MusicNote> melody) {
+    return melody.map((note) => note.solfege).join(', ');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1595,10 +3053,17 @@ class ExamplesPanel extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (!c.shouldListAll && c.examples.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 16),
+            child: _WarningBanner(
+              warningId: '${c.mode.label}-${c.n}-${c.beatCount}',
+            ),
+          ),
         LayoutBuilder(
           builder: (context, constraints) {
             final bool isSmallScreen = constraints.maxWidth < 650;
-            final double spacing = 10;
+            const double spacing = 10;
             final double itemWidth = isSmallScreen
                 ? constraints.maxWidth
                 : (constraints.maxWidth - spacing) / 2;
@@ -1633,42 +3098,74 @@ class ExamplesPanel extends StatelessWidget {
                         SizedBox(
                           width: 34,
                           height: 34,
-                          child: IconButton.filledTonal(
-                            tooltip: 'Tocar exemplo',
-                            padding: EdgeInsets.zero,
-                            onPressed: () {
+                          child: Semantics(
+                            button: true,
+                            sortKey: OrdinalSortKey(index.toDouble()),
+                            label:
+                                'Tocar exemplo sonoro ${index + 1}. Notas: ${_melodySemanticsLabel(melody)}.',
+                            hint: 'Toque duas vezes para ouvir este exemplo.',
+                            onTap: () {
                               context
                                   .read<CombinatoricsController>()
                                   .playExample(index);
                             },
-                            icon: Icon(
-                              isPlaying ? Icons.graphic_eq : Icons.play_arrow,
-                              size: 20,
+                            child: ExcludeSemantics(
+                              child: IconButton.filledTonal(
+                                tooltip: 'Tocar exemplo',
+                                padding: EdgeInsets.zero,
+                                onPressed: () {
+                                  context
+                                      .read<CombinatoricsController>()
+                                      .playExample(index);
+                                },
+                                icon: Icon(
+                                  isPlaying
+                                      ? Icons.graphic_eq
+                                      : Icons.play_arrow,
+                                  size: 20,
+                                ),
+                              ),
                             ),
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          '${index + 1}.',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
                         Expanded(
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
+                          child: ExcludeSemantics(
                             child: Row(
                               children: [
-                                for (int i = 0; i < melody.length; i++)
-                                  Padding(
-                                    padding: const EdgeInsets.only(right: 6),
-                                    child: _SmallMusicNote(
-                                      note: melody[i],
-                                      active: c.playingExampleIndex == index &&
-                                          c.playingNoteIndex == i,
+                                Text(
+                                  '${index + 1}.',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Expanded(
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: Row(
+                                      children: [
+                                        for (int i = 0; i < melody.length; i++)
+                                          Padding(
+                                            padding: EdgeInsets.only(
+                                              right: MediaQuery.of(context)
+                                                          .size
+                                                          .width <
+                                                      700
+                                                  ? 2
+                                                  : 6,
+                                            ),
+                                            child: _SmallMusicNote(
+                                              note: melody[i],
+                                              active: c.playingExampleIndex ==
+                                                      index &&
+                                                  c.playingNoteIndex == i,
+                                            ),
+                                          ),
+                                      ],
                                     ),
                                   ),
+                                ),
                               ],
                             ),
                           ),
@@ -1686,7 +3183,143 @@ class ExamplesPanel extends StatelessWidget {
   }
 }
 
-class _SmallMusicNote extends StatelessWidget {
+class _WarningBanner extends StatefulWidget {
+  final String warningId;
+
+  const _WarningBanner({
+    required this.warningId,
+  });
+
+  @override
+  State<_WarningBanner> createState() => _WarningBannerState();
+}
+
+class _WarningBannerState extends State<_WarningBanner> {
+  static final Set<String> _playedWarnings = <String>{};
+
+  late final AudioPlayer _player;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _player = AudioPlayer();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _playWarningSoundOnce();
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _WarningBanner oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.warningId != widget.warningId) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _playWarningSoundOnce();
+      });
+    }
+  }
+
+  Future<void> _playWarningSoundOnce() async {
+    if (!mounted) return;
+
+    if (_playedWarnings.contains(widget.warningId)) {
+      return;
+    }
+
+    _playedWarnings.add(widget.warningId);
+
+    try {
+      await _player.stop();
+      await _player.play(
+        AssetSource('sounds/others/errado.mp3'),
+      );
+    } catch (e) {
+      debugPrint('Erro ao tocar som de limite ultrapassado: $e');
+    }
+  }
+
+  @override
+  void dispose() {
+    _player.stop();
+    _player.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final isSmallScreen = MediaQuery.of(context).size.width < 700;
+
+    return TweenAnimationBuilder<double>(
+      duration: const Duration(milliseconds: 600),
+      tween: Tween<double>(begin: 0.8, end: 1.0),
+      curve: Curves.elasticOut,
+      builder: (context, scale, child) {
+        return Transform.scale(
+          scale: scale,
+          child: child,
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEF2F2),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFFEF4444).withValues(alpha: 0.3),
+            width: 1.5,
+          ),
+        ),
+        child: isSmallScreen
+            ? Column(
+                children: [
+                  Image.asset(
+                    'assets/images/animacao/alto_falante.gif',
+                    height: 120,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    'Existem mais possibilidades além das exibidas!',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: Color(0xFF991B1B),
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              )
+            : Row(
+                children: [
+                  Image.asset(
+                    'assets/images/animacao/alto_falante.gif',
+                    height: 110,
+                    width: 110,
+                    fit: BoxFit.contain,
+                    gaplessPlayback: true,
+                  ),
+                  const SizedBox(width: 16),
+                  const Expanded(
+                    child: Text(
+                      'Existem mais possibilidades além das exibidas!',
+                      style: TextStyle(
+                        color: Color(0xFF991B1B),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+      ),
+    );
+  }
+}
+
+class _SmallMusicNote extends StatefulWidget {
   final MusicNote note;
   final bool active;
 
@@ -1696,39 +3329,209 @@ class _SmallMusicNote extends StatelessWidget {
   });
 
   @override
+  State<_SmallMusicNote> createState() => _SmallMusicNoteState();
+}
+
+class _SmallMusicNoteState extends State<_SmallMusicNote>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _animationController;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _animationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 420),
+    );
+
+    if (widget.active) {
+      _animationController.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _SmallMusicNote oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (widget.active && !oldWidget.active) {
+      _animationController.repeat(reverse: true);
+    }
+
+    if (!widget.active && oldWidget.active) {
+      _animationController.stop();
+      _animationController.reset();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 120),
-      height: 42,
-      constraints: const BoxConstraints(
-        minWidth: 54,
-        maxWidth: 82,
-      ),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-      decoration: BoxDecoration(
-        color: note.color,
-        borderRadius: BorderRadius.circular(10),
-        border: active
-            ? Border.all(
-                color: Colors.black,
-                width: 3,
-              )
-            : null,
-      ),
-      child: Center(
-        child: Text(
-          note.solfege,
+    final mode = context.watch<CombinatoricsController>().visualizationMode;
+    final bool isMobile = MediaQuery.of(context).size.width < 700;
+
+    Widget content;
+    Color backgroundColor;
+    Border? border;
+
+    double innerHeight;
+    double innerMinWidth;
+    double innerMaxWidth;
+    double outerWidth;
+    double outerHeight;
+    EdgeInsets innerPadding;
+    double borderRadius;
+
+    switch (mode) {
+      case ExamplesVisualizationMode.colorWithNumber:
+        backgroundColor = widget.note.color;
+        border = null;
+
+        innerHeight = isMobile ? 34 : 42;
+        innerMinWidth = isMobile ? 34 : 42;
+        innerMaxWidth = isMobile ? 38 : 48;
+
+        outerWidth = isMobile ? 44 : 58;
+        outerHeight = isMobile ? 44 : 52;
+
+        innerPadding = EdgeInsets.symmetric(
+          horizontal: isMobile ? 3 : 8,
+          vertical: 5,
+        );
+
+        borderRadius = isMobile ? 8 : 10;
+
+        content = Text(
+          widget.note.id.toString(),
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: isMobile ? 14 : 16,
+            fontWeight: FontWeight.w900,
+          ),
+        );
+        break;
+
+      case ExamplesVisualizationMode.iconWithColor:
+        backgroundColor = Colors.transparent;
+        border = null;
+
+        innerHeight = isMobile ? 34 : 42;
+        innerMinWidth = isMobile ? 26 : 36;
+        innerMaxWidth = isMobile ? 30 : 42;
+
+        outerWidth = isMobile ? 38 : 54;
+        outerHeight = isMobile ? 44 : 52;
+
+        innerPadding = EdgeInsets.symmetric(
+          horizontal: isMobile ? 0 : 4,
+          vertical: 5,
+        );
+
+        borderRadius = isMobile ? 8 : 10;
+
+        content = Icon(
+          Icons.music_note,
+          color: widget.note.color,
+          size: isMobile ? 25 : 30,
+        );
+        break;
+
+      case ExamplesVisualizationMode.nameWithColor:
+        backgroundColor = widget.note.color;
+        border = null;
+
+        innerHeight = isMobile ? 34 : 42;
+        innerMinWidth = isMobile ? 42 : 42;
+        innerMaxWidth = isMobile ? 54 : 82;
+
+        outerWidth = isMobile ? 62 : 92;
+        outerHeight = isMobile ? 44 : 52;
+
+        innerPadding = EdgeInsets.symmetric(
+          horizontal: isMobile ? 4 : 8,
+          vertical: 5,
+        );
+
+        borderRadius = isMobile ? 8 : 10;
+
+        content = Text(
+          widget.note.solfege,
           textAlign: TextAlign.center,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
+          style: TextStyle(
             color: Colors.white,
-            fontSize: 12,
+            fontSize: isMobile ? 11 : 12,
             fontWeight: FontWeight.w900,
+          ),
+        );
+        break;
+    }
+
+    return SizedBox(
+      width: outerWidth,
+      height: outerHeight,
+      child: Center(
+        child: AnimatedBuilder(
+          animation: _animationController,
+          builder: (context, child) {
+            final double scale = widget.active
+                ? 1.0 + (_animationController.value * (isMobile ? 0.12 : 0.18))
+                : 1.0;
+
+            final double rotation = widget.active
+                ? math.sin(_animationController.value * math.pi * 2) *
+                    (isMobile ? 0.05 : 0.08)
+                : 0.0;
+
+            return Transform.rotate(
+              angle: rotation,
+              child: Transform.scale(
+                scale: scale,
+                child: child,
+              ),
+            );
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 120),
+            height: innerHeight,
+            constraints: BoxConstraints(
+              minWidth: innerMinWidth,
+              maxWidth: innerMaxWidth,
+            ),
+            padding: innerPadding,
+            decoration: BoxDecoration(
+              color: backgroundColor,
+              borderRadius: BorderRadius.circular(borderRadius),
+              border: widget.active
+                  ? Border.all(
+                      color: Colors.black,
+                      width: isMobile ? 2.4 : 3,
+                    )
+                  : border,
+              boxShadow: widget.active
+                  ? [
+                      BoxShadow(
+                        color: widget.note.color.withValues(alpha: 0.45),
+                        blurRadius: isMobile ? 7 : 10,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : [],
+            ),
+            child: Center(
+              child: content,
+            ),
           ),
         ),
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _animationController.dispose();
+    super.dispose();
   }
 }
 
@@ -1820,7 +3623,7 @@ class _FormationModeButton extends StatelessWidget {
     return Semantics(
       button: true,
       selected: selected,
-      label: '$title. ${selected ? 'Selecionado' : 'Não selecionado'}',
+      label: 'Selecionar formação ${title.toLowerCase().replaceAll('\n', ' ')}',
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: onTap,
@@ -1896,6 +3699,42 @@ class _FormationModeButton extends StatelessWidget {
 }
 
 ----------------
+[user_interface\widgets\hole_clipper.dart]
+
+import 'package:flutter/material.dart';
+
+class HoleClipper extends CustomClipper<Path> {
+  final Rect? holeRect;
+
+  HoleClipper(this.holeRect);
+
+  @override
+  Path getClip(Size size) {
+    final path = Path()
+      ..addRect(
+        Rect.fromLTWH(0, 0, size.width, size.height),
+      );
+
+    if (holeRect != null) {
+      final roundedHole = RRect.fromRectAndRadius(
+        holeRect!.inflate(8),
+        const Radius.circular(18),
+      );
+
+      path.addRRect(roundedHole);
+      path.fillType = PathFillType.evenOdd;
+    }
+
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant HoleClipper oldClipper) {
+    return oldClipper.holeRect != holeRect;
+  }
+}
+
+----------------
 [user_interface\widgets\instrument_selector.dart]
 
 import 'package:flutter/material.dart';
@@ -1912,7 +3751,7 @@ class InstrumentSelector extends StatelessWidget {
     final controller = context.watch<CombinatoricsController>();
 
     return DropdownButtonFormField<Instrument>(
-      value: controller.selectedInstrument,
+      initialValue: controller.selectedInstrument,
       isExpanded: true,
       style: Theme.of(context).textTheme.titleMedium?.copyWith(
             fontWeight: FontWeight.w700,
@@ -2077,7 +3916,7 @@ class NoteSelector extends StatelessWidget {
                   return Semantics(
                     button: true,
                     selected: false,
-                    label: '${note.semanticsLabel}. Não selecionada',
+                    label: 'Tocar para adicionar a nota ${note.solfege}',
                     child: InkWell(
                       borderRadius: BorderRadius.circular(14),
                       onTap: () async {
@@ -2099,12 +3938,28 @@ class NoteSelector extends StatelessWidget {
         const Divider(),
         const SizedBox(height: 10),
         Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             const Icon(Icons.check_circle, size: 20),
             const SizedBox(width: 8),
-            Text(
-              'Notas escolhidas: ${controller.n}',
-              style: const TextStyle(fontWeight: FontWeight.w900),
+            Expanded(
+              child: Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  const Text(
+                    'Notas escolhidas:',
+                    style: TextStyle(fontWeight: FontWeight.w900),
+                  ),
+                  const SizedBox(width: 16),
+                  Text(
+                    'n = ${controller.n}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      color: Color(0xFF8B5CF6),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -2127,7 +3982,7 @@ class NoteSelector extends StatelessWidget {
                   return Semantics(
                     button: true,
                     selected: true,
-                    label: '${note.semanticsLabel}. Selecionada',
+                    label: 'Tocar para remover a nota ${note.solfege}',
                     child: InkWell(
                       borderRadius: BorderRadius.circular(14),
                       onTap: () async {
@@ -2186,45 +4041,50 @@ class _MusicNoteCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final backgroundColor =
-        selected ? note.color : note.color.withValues(alpha: 0.18);
-
-    final foregroundColor = selected ? Colors.white : Colors.black87;
-
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
       width: width,
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      height: 64,
+      padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
       decoration: BoxDecoration(
-        color: backgroundColor,
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: selected ? Colors.black87 : note.color,
-          width: selected ? 2.5 : 1.2,
-        ),
-        boxShadow: selected
-            ? [
-                BoxShadow(
-                  color: note.color.withValues(alpha: 0.22),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ]
-            : [],
       ),
-      child: Center(
-        child: Text(
-          note.solfege,
-          textAlign: TextAlign.center,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: foregroundColor,
-            fontSize: 13,
-            fontWeight: FontWeight.w900,
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.music_note,
+                color: note.color,
+                size: 30,
+              ),
+              const SizedBox(width: 2),
+              Text(
+                note.id.toString(),
+                style: const TextStyle(
+                  color: Colors.black87,
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ],
           ),
-        ),
+          const SizedBox(height: 2),
+          Text(
+            note.solfege,
+            textAlign: TextAlign.center,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: Colors.black87,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2234,12 +4094,32 @@ class _MusicNoteCard extends StatelessWidget {
 [user_interface\widgets\result_panel.dart]
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:provider/provider.dart';
 
 import '../../controllers/combinatorics_controller.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 
-class ResultPanel extends StatelessWidget {
-  const ResultPanel({super.key});
+class ResultPanel extends StatefulWidget {
+  final GlobalKey? symbolsKey;
+  final GlobalKey? clearKey;
+  final GlobalKey? saveKey;
+
+  const ResultPanel({
+    super.key,
+    this.symbolsKey,
+    this.clearKey,
+    this.saveKey,
+  });
+
+  @override
+  State<ResultPanel> createState() => _ResultPanelState();
+}
+
+class _ResultPanelState extends State<ResultPanel> {
+  final GlobalKey<_AnswerFieldState> _generalRuleFieldKey =
+      GlobalKey<_AnswerFieldState>();
 
   @override
   Widget build(BuildContext context) {
@@ -2258,46 +4138,98 @@ class ResultPanel extends StatelessWidget {
           value: c.studentFoundTotal,
           minLines: 1,
           maxLines: 2,
+          keyboardType: TextInputType.number,
+          textInputAction: TextInputAction.next,
+          semanticsHint:
+              'Digite a quantidade de músicas que você encontrou. Use o botão de alto-falante para ouvir sua resposta.',
+          sortOrder: 1,
           onChanged:
               context.read<CombinatoricsController>().setStudentFoundTotal,
         ),
         const SizedBox(height: 12),
         _AnswerField(
-          label: 'Qual cálculo você utilizou para encontrar esse valor?',
-          value: c.studentCalculation,
-          minLines: 2,
-          maxLines: 3,
-          onChanged:
-              context.read<CombinatoricsController>().setStudentCalculation,
-        ),
-        const SizedBox(height: 12),
-        _AnswerField(
-          label: 'Escreva a regra geral que representa esse tipo de situação.',
+          key: _generalRuleFieldKey,
+          label: 'Escreva a regra geral.',
           value: c.studentGeneralRule,
           minLines: 2,
           maxLines: 3,
+          keyboardType: TextInputType.text,
+          textInputAction: TextInputAction.done,
+          semanticsHint:
+              'Digite a regra geral que representa a situação. Use o botão de símbolos para inserir símbolos matemáticos.',
+          sortOrder: 2,
+          showMathSymbols: true,
+          symbolsKey: widget.symbolsKey,
           onChanged:
               context.read<CombinatoricsController>().setStudentGeneralRule,
         ),
         const SizedBox(height: 14),
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: () async {
-              await context
-                  .read<CombinatoricsController>()
-                  .saveCurrentActivity();
+        Align(
+          alignment: Alignment.center,
+          child: Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.center,
+            children: [
+              KeyedSubtree(
+                key: widget.clearKey,
+                child: Semantics(
+                  container: true,
+                  button: true,
+                  sortKey: const OrdinalSortKey(3),
+                  label: 'Limpar todos os campos de resposta',
+                  child: ExcludeSemantics(
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFFDC2626),
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () {
+                        context
+                            .read<CombinatoricsController>()
+                            .clearStudentAnswers();
 
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Atividade salva na galeria!'),
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Campos de resposta limpos!'),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.cleaning_services_outlined),
+                      label: const Text('Limpar'),
+                    ),
                   ),
-                );
-              }
-            },
-            icon: const Icon(Icons.save),
-            label: const Text('Salvar atividade'),
+                ),
+              ),
+              KeyedSubtree(
+                key: widget.saveKey,
+                child: Semantics(
+                  container: true,
+                  button: true,
+                  sortKey: const OrdinalSortKey(4),
+                  label: 'Salvar a atividade atual na galeria',
+                  child: ExcludeSemantics(
+                    child: FilledButton.icon(
+                      onPressed: () async {
+                        await context
+                            .read<CombinatoricsController>()
+                            .saveCurrentActivity();
+
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Atividade salva na galeria!'),
+                            ),
+                          );
+                        }
+                      },
+                      icon: const Icon(Icons.save),
+                      label: const Text('Salvar'),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ],
@@ -2328,7 +4260,7 @@ class _VariablesSummary extends StatelessWidget {
                 value: noteCount.toString(),
                 label: compact ? 'notas' : 'notas escolhidas',
                 icon: Icons.music_note,
-                color: const Color(0xFF2563EB),
+                color: const Color(0xFF8B5CF6),
                 compact: compact,
               ),
             ),
@@ -2337,9 +4269,9 @@ class _VariablesSummary extends StatelessWidget {
               child: _VariableCard(
                 symbol: 'b',
                 value: beatCount.toString(),
-                label: 'batidas',
+                label: compact ? 'batidas' : 'número de batidas',
                 icon: Icons.timer,
-                color: const Color(0xFF0F766E),
+                color: const Color(0xFFF59E0B),
                 compact: compact,
               ),
             ),
@@ -2369,83 +4301,118 @@ class _VariableCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      constraints: BoxConstraints(
-        minHeight: compact ? 68 : 84,
-      ),
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 8 : 14,
-        vertical: compact ? 8 : 12,
-      ),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(compact ? 14 : 18),
-        border: Border.all(
-          color: color.withValues(alpha: 0.45),
-          width: 1.4,
-        ),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: compact ? 26 : 32,
-            height: compact ? 26 : 32,
-            decoration: BoxDecoration(
-              color: color,
-              borderRadius: BorderRadius.circular(compact ? 8 : 10),
-            ),
-            child: Icon(
-              icon,
-              color: Colors.white,
-              size: compact ? 14 : 17,
+    return Semantics(
+      label: '$label. $symbol igual a $value.',
+      child: ExcludeSemantics(
+        child: Container(
+          constraints: BoxConstraints(
+            minHeight: compact ? 76 : 82,
+          ),
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 12 : 16,
+            vertical: compact ? 12 : 14,
+          ),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: color.withValues(alpha: 0.55),
+              width: 1.4,
             ),
           ),
-          SizedBox(width: compact ? 8 : 12),
-          Expanded(
-            child: RichText(
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              text: TextSpan(
-                style: const TextStyle(
-                  color: Color(0xFF0F172A),
-                ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final bool stackText = compact || constraints.maxWidth < 250;
+
+              if (stackText) {
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _VariableExpression(
+                            symbol: symbol,
+                            value: value,
+                            color: color,
+                            compact: compact,
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            label,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: const Color(0xFF0F172A),
+                              fontSize: compact ? 12 : 13,
+                              fontWeight: FontWeight.w800,
+                              height: 1.1,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  TextSpan(
-                    text: symbol,
-                    style: TextStyle(
-                      fontSize: compact ? 24 : 34,
-                      fontWeight: FontWeight.w900,
-                      color: color,
-                    ),
+                  _VariableExpression(
+                    symbol: symbol,
+                    value: value,
+                    color: color,
+                    compact: compact,
                   ),
-                  TextSpan(
-                    text: ' = ',
-                    style: TextStyle(
-                      fontSize: compact ? 18 : 24,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  TextSpan(
-                    text: value,
-                    style: TextStyle(
-                      fontSize: compact ? 22 : 30,
-                      fontWeight: FontWeight.w900,
-                      color: color,
-                    ),
-                  ),
-                  TextSpan(
-                    text: '\n$label',
-                    style: TextStyle(
-                      fontSize: compact ? 11 : 13,
-                      fontWeight: FontWeight.w700,
-                      height: 1.2,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF0F172A),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ],
-              ),
-            ),
+              );
+            },
           ),
-        ],
+        ),
+      ),
+    );
+  }
+}
+
+class _VariableExpression extends StatelessWidget {
+  final String symbol;
+  final String value;
+  final Color color;
+  final bool compact;
+
+  const _VariableExpression({
+    required this.symbol,
+    required this.value,
+    required this.color,
+    required this.compact,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      '$symbol = $value',
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        color: color,
+        fontSize: compact ? 19 : 22,
+        fontWeight: FontWeight.w900,
       ),
     );
   }
@@ -2456,14 +4423,27 @@ class _AnswerField extends StatefulWidget {
   final String value;
   final int minLines;
   final int maxLines;
+  final TextInputType keyboardType;
+  final TextInputAction textInputAction;
+  final String semanticsHint;
+  final double sortOrder;
+  final bool showMathSymbols;
+  final GlobalKey? symbolsKey;
   final ValueChanged<String> onChanged;
 
   const _AnswerField({
+    super.key,
     required this.label,
     required this.value,
     required this.minLines,
     required this.maxLines,
+    required this.keyboardType,
+    required this.textInputAction,
+    required this.semanticsHint,
+    required this.sortOrder,
     required this.onChanged,
+    this.showMathSymbols = false,
+    this.symbolsKey,
   });
 
   @override
@@ -2471,12 +4451,591 @@ class _AnswerField extends StatefulWidget {
 }
 
 class _AnswerFieldState extends State<_AnswerField> {
+  static final stt.SpeechToText _sharedSpeech = stt.SpeechToText();
+  static _AnswerFieldState? _activeListeningField;
+  static bool _speechInitialized = false;
+  static bool _speechAvailable = false;
+  static bool _isChangingField = false;
+
   late final TextEditingController _controller;
+  late final FlutterTts _tts;
+
+  bool _isSpeaking = false;
+  bool _isListening = false;
+  bool _symbolsExpanded = false;
+
+  static const List<_MathSymbolItem> _mathSymbols = [
+    _MathSymbolItem(
+      symbol: 'n',
+      description:
+          'Use n para representar a quantidade de notas escolhidas. Exemplo: se você escolheu 3 notas, então n = 3.',
+    ),
+    _MathSymbolItem(
+      symbol: 'b',
+      description:
+          'Use b para representar a quantidade de batidas ou posições da música. Exemplo: se a música tem 2 batidas, então b = 2.',
+    ),
+    _MathSymbolItem(
+      symbol: '×',
+      description:
+          'Use o sinal de multiplicação para contar possibilidades em sequência. Exemplo: 3 × 3 = 9.',
+    ),
+    _MathSymbolItem(
+      symbol: '=',
+      description:
+          'Use o sinal de igual para mostrar o resultado de uma conta ou equivalência. Exemplo: 3 × 3 = 9.',
+    ),
+    _MathSymbolItem(
+      symbol: '^',
+      description:
+          'Use potência quando houver repetição. Exemplo: n^b significa n elevado a b. Se n = 3 e b = 2, então 3^2 = 9.',
+    ),
+    _MathSymbolItem(
+      symbol: '!',
+      description:
+          'Use fatorial quando a ordem importa e não há repetição. Exemplo: n! representa n vezes todos os números menores até 1.',
+    ),
+    _MathSymbolItem(
+      symbol: '(',
+      description:
+          'Use abre parênteses para organizar uma expressão. Exemplo: n! / (n - b)!',
+    ),
+    _MathSymbolItem(
+      symbol: ')',
+      description:
+          'Use fecha parênteses para encerrar uma parte da expressão. Exemplo: n! / (n - b)!',
+    ),
+    _MathSymbolItem(
+      symbol: '-',
+      description:
+          'Use subtração para indicar uma diferença. Exemplo: n - b representa a quantidade de notas menos a quantidade de batidas.',
+    ),
+    _MathSymbolItem(
+      symbol: '/',
+      description:
+          'Use divisão para representar uma fração. Exemplo: n! / (n - b)! pode representar formações sem repetição.',
+    ),
+    _MathSymbolItem(
+      symbol: '0',
+      description: '',
+      showInfo: false,
+    ),
+    _MathSymbolItem(
+      symbol: '1',
+      description: '',
+      showInfo: false,
+    ),
+    _MathSymbolItem(
+      symbol: '2',
+      description: '',
+      showInfo: false,
+    ),
+    _MathSymbolItem(
+      symbol: '3',
+      description: '',
+      showInfo: false,
+    ),
+    _MathSymbolItem(
+      symbol: '4',
+      description: '',
+      showInfo: false,
+    ),
+    _MathSymbolItem(
+      symbol: '5',
+      description: '',
+      showInfo: false,
+    ),
+    _MathSymbolItem(
+      symbol: '6',
+      description: '',
+      showInfo: false,
+    ),
+    _MathSymbolItem(
+      symbol: '7',
+      description: '',
+      showInfo: false,
+    ),
+    _MathSymbolItem(
+      symbol: '8',
+      description: '',
+      showInfo: false,
+    ),
+    _MathSymbolItem(
+      symbol: '9',
+      description: '',
+      showInfo: false,
+    ),
+  ];
 
   @override
   void initState() {
     super.initState();
+
     _controller = TextEditingController(text: widget.value);
+
+    _tts = FlutterTts();
+    _configureTts();
+
+    _initSpeech();
+  }
+
+  Future<void> _configureTts() async {
+    await _tts.setLanguage('pt-BR');
+    await _tts.setSpeechRate(0.48);
+    await _tts.setPitch(1.0);
+    await _tts.setVolume(1.0);
+    await _tts.awaitSpeakCompletion(true);
+
+    _tts.setCompletionHandler(() {
+      if (mounted) {
+        setState(() {
+          _isSpeaking = false;
+        });
+      }
+    });
+
+    _tts.setCancelHandler(() {
+      if (mounted) {
+        setState(() {
+          _isSpeaking = false;
+        });
+      }
+    });
+
+    _tts.setErrorHandler((message) {
+      if (mounted) {
+        setState(() {
+          _isSpeaking = false;
+        });
+      }
+    });
+  }
+
+  Future<void> _initSpeech() async {
+    if (_speechInitialized) return;
+
+    _speechInitialized = true;
+
+    _speechAvailable = await _sharedSpeech.initialize(
+      onStatus: (status) {
+        final activeField = _activeListeningField;
+
+        if (status == 'done' || status == 'notListening') {
+          if (activeField != null && activeField.mounted) {
+            activeField.setState(() {
+              activeField._isListening = false;
+            });
+          }
+
+          _activeListeningField = null;
+        }
+      },
+      onError: (error) {
+        final activeField = _activeListeningField;
+
+        if (activeField != null && activeField.mounted) {
+          activeField.setState(() {
+            activeField._isListening = false;
+          });
+
+          ScaffoldMessenger.of(activeField.context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Não foi possível reconhecer a fala: ${error.errorMsg}',
+              ),
+            ),
+          );
+        }
+
+        _activeListeningField = null;
+      },
+    );
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _stopCurrentListeningField() async {
+    if (_activeListeningField == null) return;
+
+    final oldField = _activeListeningField;
+
+    await _sharedSpeech.stop();
+
+    if (oldField != null && oldField.mounted) {
+      oldField.setState(() {
+        oldField._isListening = false;
+      });
+    }
+
+    _activeListeningField = null;
+
+    await Future<void>.delayed(const Duration(milliseconds: 350));
+  }
+
+  Future<void> _toggleListen() async {
+    if (_isChangingField) return;
+
+    _isChangingField = true;
+
+    try {
+      if (_isListening && _activeListeningField == this) {
+        await _sharedSpeech.stop();
+
+        _activeListeningField = null;
+
+        if (mounted) {
+          setState(() {
+            _isListening = false;
+          });
+        }
+
+        return;
+      }
+
+      if (_activeListeningField != null && _activeListeningField != this) {
+        await _stopCurrentListeningField();
+      }
+
+      if (_isSpeaking) {
+        await _tts.stop();
+
+        if (mounted) {
+          setState(() {
+            _isSpeaking = false;
+          });
+        }
+      }
+
+      if (!_speechInitialized) {
+        await _initSpeech();
+      }
+
+      if (!_speechAvailable) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Reconhecimento de voz não disponível neste dispositivo.',
+              ),
+            ),
+          );
+        }
+
+        return;
+      }
+
+      _activeListeningField = this;
+
+      if (mounted) {
+        setState(() {
+          _isListening = true;
+        });
+      }
+
+      await _sharedSpeech.listen(
+        onResult: (result) {
+          if (_activeListeningField != this) return;
+
+          final recognizedText = result.recognizedWords.trim();
+
+          if (recognizedText.isEmpty) return;
+
+          _controller.text = recognizedText;
+          _controller.selection = TextSelection.collapsed(
+            offset: _controller.text.length,
+          );
+
+          widget.onChanged(recognizedText);
+
+          if (mounted) {
+            setState(() {});
+          }
+        },
+        listenOptions: stt.SpeechListenOptions(
+          localeId: 'pt_BR',
+          listenMode: stt.ListenMode.dictation,
+          partialResults: true,
+        ),
+      );
+    } finally {
+      _isChangingField = false;
+    }
+  }
+
+  void _openAllSymbolsInfo() {
+    SemanticsService.announce(
+      'Abrindo explicações dos símbolos matemáticos.',
+      TextDirection.ltr,
+    );
+
+    final itemsWithInfo = _mathSymbols.where((item) {
+      return item.description.trim().isNotEmpty;
+    }).toList();
+
+    showDialog<void>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Row(
+            children: [
+              Icon(
+                Icons.info_outline,
+                color: Color(0xFF2563EB),
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text('Explicações dos símbolos'),
+              ),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: itemsWithInfo.map((item) {
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 14),
+                  child: Semantics(
+                    container: true,
+                    label: '${item.symbol}. ${item.description}',
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 34,
+                          height: 34,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFF4F46E5),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            item.symbol,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            item.description,
+                            style: const TextStyle(
+                              fontSize: 15,
+                              height: 1.35,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFF1E293B),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+
+                SemanticsService.announce(
+                  'Explicações dos símbolos fechadas.',
+                  TextDirection.ltr,
+                );
+              },
+              child: const Text('Fechar'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  void _insertSymbol(String symbol) {
+    final text = _controller.text;
+    final selection = _controller.selection;
+
+    final int start = selection.isValid ? selection.start : text.length;
+    final int end = selection.isValid ? selection.end : text.length;
+
+    final newText = text.replaceRange(start, end, symbol);
+    final newOffset = start + symbol.length;
+
+    _controller.text = newText;
+    _controller.selection = TextSelection.collapsed(offset: newOffset);
+
+    widget.onChanged(newText);
+
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _deleteLastCharacter() {
+    final text = _controller.text;
+    final selection = _controller.selection;
+
+    if (text.isEmpty) return;
+
+    final int cursorPosition =
+        selection.isValid ? selection.baseOffset : text.length;
+
+    if (cursorPosition <= 0) return;
+
+    final newText = text.replaceRange(
+      cursorPosition - 1,
+      cursorPosition,
+      '',
+    );
+
+    final newOffset = cursorPosition - 1;
+
+    _controller.text = newText;
+    _controller.selection = TextSelection.collapsed(offset: newOffset);
+
+    widget.onChanged(newText);
+
+    if (mounted) {
+      setState(() {});
+    }
+
+    SemanticsService.announce(
+      'Último caractere apagado.',
+      TextDirection.ltr,
+    );
+  }
+
+  void _toggleSymbolsPanel() {
+    if (!mounted) return;
+
+    setState(() {
+      _symbolsExpanded = !_symbolsExpanded;
+    });
+
+    SemanticsService.announce(
+      _symbolsExpanded
+          ? 'Painel de símbolos matemáticos aberto.'
+          : 'Painel de símbolos matemáticos fechado.',
+      TextDirection.ltr,
+    );
+  }
+
+  Widget _buildToggleSymbolsButton() {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Semantics(
+        container: true,
+        button: true,
+        label: _symbolsExpanded
+            ? 'Fechar símbolos matemáticos'
+            : 'Abrir símbolos matemáticos',
+        child: ExcludeSemantics(
+          child: FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFF4F46E5),
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 10,
+              ),
+            ),
+            onPressed: _toggleSymbolsPanel,
+            icon: Icon(
+              _symbolsExpanded ? Icons.keyboard_arrow_up : Icons.functions,
+            ),
+            label: Text(
+              _symbolsExpanded ? 'Fechar símbolos' : 'Símbolos',
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInlineSymbolsPanel() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 10,
+        vertical: 8,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: const Color(0xFFE2E8F0),
+          width: 1.2,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Expanded(
+                child: Text(
+                  'Toque em um símbolo para inserir na regra geral:',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF334155),
+                  ),
+                ),
+              ),
+              Semantics(
+                container: true,
+                button: true,
+                sortKey: const OrdinalSortKey(2.10),
+                label: 'Abrir explicações dos símbolos matemáticos',
+                child: ExcludeSemantics(
+                  child: IconButton(
+                    tooltip: 'Explicações dos símbolos',
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 36,
+                      minHeight: 36,
+                    ),
+                    iconSize: 22,
+                    onPressed: _openAllSymbolsInfo,
+                    icon: const Icon(
+                      Icons.info_outline,
+                      color: Color(0xFF2563EB),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              ...List.generate(_mathSymbols.length, (index) {
+                final item = _mathSymbols[index];
+
+                return _SymbolButton(
+                  item: item,
+                  sortOrder: 2.20 + (index * 0.01),
+                  onTap: () {
+                    _insertSymbol(item.symbol);
+                  },
+                );
+              }),
+              _DeleteSymbolButton(
+                onTap: _deleteLastCharacter,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -2493,38 +5052,224 @@ class _AnswerFieldState extends State<_AnswerField> {
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
-      controller: _controller,
-      minLines: widget.minLines,
-      maxLines: widget.maxLines,
-      onChanged: widget.onChanged,
-      decoration: InputDecoration(
-        labelText: widget.label,
-        alignLabelWithHint: true,
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(
-            color: Color(0xFF4F46E5),
-            width: 2,
+    final suffixButtons = <Widget>[
+      Semantics(
+        button: true,
+        sortKey: OrdinalSortKey(widget.sortOrder + 0.05),
+        label: _isListening
+            ? 'Parar gravação da resposta por voz do campo ${widget.label}'
+            : 'Falar resposta para preencher o campo ${widget.label}',
+        child: IconButton(
+          tooltip: _isListening ? 'Parar gravação' : 'Falar resposta',
+          onPressed: _toggleListen,
+          icon: Icon(
+            _isListening ? Icons.mic : Icons.mic_none,
+            color: _isListening
+                ? const Color(0xFFDC2626)
+                : const Color(0xFF2563EB),
           ),
         ),
+      ),
+    ];
+
+    return Semantics(
+      sortKey: OrdinalSortKey(widget.sortOrder),
+      explicitChildNodes: true,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bool compact = constraints.maxWidth < 360;
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                widget.label,
+                maxLines: compact ? 3 : 2,
+                overflow: TextOverflow.ellipsis,
+                softWrap: true,
+                style: TextStyle(
+                  fontSize: compact ? 14 : 16,
+                  fontWeight: FontWeight.w900,
+                  color: const Color(0xFF0F172A),
+                  height: 1.2,
+                ),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: _controller,
+                minLines: widget.minLines,
+                maxLines: widget.maxLines,
+                // Desabilita o teclado somente no campo da regra geral
+                readOnly: widget.showMathSymbols,
+
+                // Mantém o cursor visível para mostrar onde o símbolo será inserido
+                showCursor: true,
+
+                keyboardType: widget.showMathSymbols
+                    ? TextInputType.none
+                    : widget.keyboardType,
+
+                textInputAction: widget.textInputAction,
+                onChanged: widget.onChanged,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w600,
+                ),
+                decoration: InputDecoration(
+                  hintText: '',
+                  semanticCounterText: widget.semanticsHint,
+                  filled: true,
+                  fillColor: Colors.white,
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 18,
+                  ),
+                  suffixIcon: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: suffixButtons,
+                  ),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(
+                      color: Color(0xFFE2E8F0),
+                      width: 1.5,
+                    ),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14),
+                    borderSide: const BorderSide(
+                      color: Color(0xFF111827),
+                      width: 3,
+                    ),
+                  ),
+                ),
+              ),
+              if (widget.showMathSymbols) ...[
+                KeyedSubtree(
+                  key: widget.symbolsKey,
+                  child: _buildToggleSymbolsButton(),
+                ),
+                if (_symbolsExpanded) _buildInlineSymbolsPanel(),
+              ],
+            ],
+          );
+        },
       ),
     );
   }
 
   @override
   void dispose() {
+    if (_activeListeningField == this) {
+      _activeListeningField = null;
+      _sharedSpeech.stop();
+    }
+
+    _tts.stop();
     _controller.dispose();
+
     super.dispose();
+  }
+}
+
+class _MathSymbolItem {
+  final String symbol;
+  final String description;
+  final bool showInfo;
+
+  const _MathSymbolItem({
+    required this.symbol,
+    required this.description,
+    this.showInfo = true,
+  });
+}
+
+class _SymbolButton extends StatelessWidget {
+  final _MathSymbolItem item;
+  final VoidCallback onTap;
+  final double sortOrder;
+
+  const _SymbolButton({
+    required this.item,
+    required this.onTap,
+    required this.sortOrder,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      button: true,
+      sortKey: OrdinalSortKey(sortOrder),
+      label: 'Inserir símbolo ${item.symbol}',
+      hint: item.description.isEmpty ? null : item.description,
+      child: ExcludeSemantics(
+        child: SizedBox(
+          width: 42,
+          height: 36,
+          child: FilledButton(
+            onPressed: onTap,
+            style: FilledButton.styleFrom(
+              padding: EdgeInsets.zero,
+              backgroundColor: const Color(0xFF4F46E5),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: Text(
+              item.symbol,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DeleteSymbolButton extends StatelessWidget {
+  final VoidCallback onTap;
+
+  const _DeleteSymbolButton({
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      container: true,
+      button: true,
+      sortKey: const OrdinalSortKey(2.90),
+      label: 'Apagar último caractere da regra geral',
+      child: ExcludeSemantics(
+        child: SizedBox(
+          width: 46,
+          height: 36,
+          child: FilledButton(
+            onPressed: onTap,
+            style: FilledButton.styleFrom(
+              padding: EdgeInsets.zero,
+              backgroundColor: const Color(0xFFDC2626),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+              ),
+            ),
+            child: const Icon(
+              Icons.backspace_outlined,
+              size: 18,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 
@@ -2579,6 +5324,640 @@ class SectionCard extends StatelessWidget {
     );
   }
 }
+
+----------------
+[user_interface\widgets\vlibras_widget.dart]
+
+export 'vlibras_widget_mobile.dart'
+    if (dart.library.html) 'vlibras_widget_web.dart';
+
+----------------
+[user_interface\widgets\vlibras_widget_mobile.dart]
+
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:webview_flutter/webview_flutter.dart';
+
+class VLibrasWidget extends StatefulWidget {
+  const VLibrasWidget({super.key});
+
+  static WebViewController? _controller;
+  static bool _isWidgetReady = false;
+  static String? _pendingText;
+
+  static Future<void> buscarTraducao(String texto) async {
+    _pendingText = texto;
+
+    if (_controller == null || !_isWidgetReady) {
+      debugPrint('VLibras: ainda não está pronto. Texto ficará pendente.');
+      return;
+    }
+
+    await _sendTextToWeb(texto);
+  }
+
+  static Future<void> _sendTextToWeb(String texto) async {
+    if (_controller == null) return;
+
+    final safe = jsonEncode(texto);
+
+    await _controller!.runJavaScript("""
+      try {
+        if (window.queueTranslate) {
+          window.queueTranslate($safe);
+        } else {
+          window.setTutorialText && window.setTutorialText($safe);
+          window.translateTutorialText && window.translateTutorialText();
+        }
+      } catch (e) {
+        console.log("VLibras translate error:", e);
+      }
+    """);
+  }
+
+  @override
+  State<VLibrasWidget> createState() => _VLibrasWidgetState();
+}
+
+class _VLibrasWidgetState extends State<VLibrasWidget> {
+  bool _isLoading = true;
+  late final WebViewController _controller;
+
+  int _reloadAttempts = 0;
+
+  @override
+  void initState() {
+    super.initState();
+
+    if (VLibrasWidget._controller != null) {
+      _controller = VLibrasWidget._controller!;
+      _isLoading = false;
+
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final pending = VLibrasWidget._pendingText;
+        if (VLibrasWidget._isWidgetReady &&
+            pending != null &&
+            pending.trim().isNotEmpty) {
+          await VLibrasWidget.buscarTraducao(pending);
+        }
+      });
+
+      return;
+    }
+
+    _controller = WebViewController();
+    _controller.setJavaScriptMode(JavaScriptMode.unrestricted);
+    _controller.setBackgroundColor(const Color(0x00000000));
+    _controller.setOnConsoleMessage((msg) {
+      debugPrint('VLibras WebView console: ${msg.message}');
+    });
+
+    _controller.setNavigationDelegate(
+      NavigationDelegate(
+        onPageFinished: (_) async {
+          if (!mounted) return;
+
+          setState(() => _isLoading = false);
+
+          final ok = await _waitUntilReady();
+          if (!ok) return;
+
+          VLibrasWidget._isWidgetReady = true;
+
+          final pending = VLibrasWidget._pendingText;
+          if (pending != null && pending.trim().isNotEmpty) {
+            await VLibrasWidget._sendTextToWeb(pending);
+            await Future<void>.delayed(const Duration(milliseconds: 60));
+            await VLibrasWidget._sendTextToWeb(pending);
+          }
+        },
+        onWebResourceError: (error) async {
+          debugPrint('VLibras WebResourceError: ${error.description}');
+
+          if (_reloadAttempts < 2) {
+            _reloadAttempts++;
+            debugPrint('VLibras: tentando reload $_reloadAttempts/2 ...');
+            await Future.delayed(const Duration(milliseconds: 600));
+            await _controller.reload();
+            return;
+          }
+
+          debugPrint('VLibras: falhou após retries.');
+        },
+      ),
+    );
+
+    _controller.loadHtmlString(
+      _vlibrasHtml,
+      baseUrl: 'https://vlibras.gov.br/app/',
+    );
+
+    VLibrasWidget._controller = _controller;
+    VLibrasWidget._isWidgetReady = false;
+  }
+
+  Future<bool> _waitUntilReady() async {
+    for (int i = 0; i < 60; i++) {
+      final result = await _controller.runJavaScriptReturningResult("""
+        (function () {
+          const hasBtn = !!document.querySelector('.vw-access-button') || !!document.querySelector('[vw-access-button]');
+          const hasVlibras = (typeof window.VLibras !== 'undefined');
+          const hasFunctions =
+            (typeof window.setTutorialText === 'function') &&
+            (typeof window.translateTutorialText === 'function') &&
+            (typeof window.queueTranslate === 'function');
+          const hasApplyBtn = (typeof window.__applyVLButtonStyle === 'function');
+          return hasBtn && hasVlibras && hasFunctions && hasApplyBtn;
+        })();
+      """);
+
+      if (result.toString().contains('true')) return true;
+      await Future.delayed(const Duration(milliseconds: 100));
+    }
+
+    debugPrint('VLibras: timeout esperando ficar pronto.');
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    final targetWidth = screenWidth * 0.95;
+    final targetHeight = screenHeight * 0.95;
+
+    return SizedBox(
+      width: targetWidth,
+      height: targetHeight,
+      child: FittedBox(
+        fit: BoxFit.contain,
+        alignment: Alignment.bottomRight,
+        child: SizedBox(
+          width: 300,
+          height: 500,
+          child: Stack(
+            children: [
+              WebViewWidget(controller: _controller),
+              if (_isLoading)
+                const Center(
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+const String _vlibrasHtml = r'''
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <style>
+      html, body {
+        background: transparent !important;
+        overflow: hidden;
+        margin: 0;
+        padding: 0;
+      }
+
+      div[vw-access-button],
+      .vw-access-button {
+        transform: scale(2.0) !important;
+        transform-origin: bottom right !important;
+        -webkit-transform: scale(2.0) !important;
+        -webkit-transform-origin: bottom right !important;
+      }
+
+      [vw] {
+        overflow: visible !important;
+      }
+
+      #vlibrasText {
+        position: fixed;
+        left: -10000px;
+        top: 0;
+        width: 10px;
+        height: 10px;
+        overflow: hidden;
+        opacity: 0.01;
+        user-select: text;
+        white-space: pre-wrap;
+      }
+
+      .unity-warning, .unity-error, .unity-dialog, .unityMessage, .webgl-error, .errorDialog {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="vlibrasText">...</div>
+
+    <div vw class="enabled">
+      <div vw-access-button class="active"></div>
+      <div vw-plugin-wrapper>
+        <div class="vw-plugin-top-wrapper"></div>
+      </div>
+    </div>
+
+    <script>
+      window.alert = function(msg) { console.log("alert suppressed:", msg); };
+      window.confirm = function(msg) { console.log("confirm suppressed:", msg); return true; };
+      window.prompt = function(msg) { console.log("prompt suppressed:", msg); return null; };
+
+      function tryDismissUnityError() {
+        try {
+          const all = document.querySelectorAll('button, a, div');
+          for (const el of all) {
+            const t = (el.innerText || "").trim().toLowerCase();
+            if (t === "ok" || t === "okay") {
+              const pageText = (document.body.innerText || "").toLowerCase();
+              if (pageText.includes("unity") && pageText.includes("error")) {
+                el.click();
+                return;
+              }
+            }
+          }
+        } catch(e) {}
+      }
+
+      setInterval(tryDismissUnityError, 800);
+
+      const obs = new MutationObserver(() => tryDismissUnityError());
+      obs.observe(document.documentElement, { childList: true, subtree: true });
+    </script>
+
+    <script src="https://vlibras.gov.br/app/vlibras-plugin.js"></script>
+
+    <script>
+      window.widgetInstance = new window.VLibras.Widget('https://vlibras.gov.br/app');
+
+      window.setTutorialText = function(text) {
+        const el = document.getElementById('vlibrasText');
+        if (!el) return;
+        el.textContent = (text || "");
+      };
+
+      window.translateTutorialText = function() {
+        const el = document.getElementById('vlibrasText');
+        if (!el) return;
+
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+
+          document.dispatchEvent(new Event('selectionchange'));
+        } catch(e) {}
+
+        try {
+          el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+          el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        } catch(e) {}
+      };
+
+      (function () {
+        const SCALE = 2.0;
+
+        function apply() {
+          const btn = document.querySelector('[vw-access-button]') || document.querySelector('.vw-access-button');
+          if (!btn) return false;
+
+          btn.style.transform = 'scale(' + SCALE + ')';
+          btn.style.transformOrigin = 'bottom right';
+          btn.style.webkitTransform = 'scale(' + SCALE + ')';
+          btn.style.webkitTransformOrigin = 'bottom right';
+
+          return true;
+        }
+
+        window.__applyVLButtonStyle = function() {
+          try { return apply(); } catch(e) { return false; }
+        };
+
+        const t = setInterval(() => {
+          if (apply()) clearInterval(t);
+        }, 200);
+
+        new MutationObserver(() => apply())
+          .observe(document.documentElement, { childList: true, subtree: true, attributes: true });
+      })();
+
+      (function () {
+        window.__vl_timers = [];
+        window.__vl_lastText = null;
+
+        function clearTimers() {
+          (window.__vl_timers || []).forEach(id => clearTimeout(id));
+          window.__vl_timers = [];
+        }
+
+        function translateOnce() {
+          try {
+            window.translateTutorialText && window.translateTutorialText();
+          } catch (e) {}
+        }
+
+        window.queueTranslate = function(text) {
+          if (!text) return;
+
+          if (window.__vl_lastText === text) {
+            translateOnce();
+            return;
+          }
+
+          window.__vl_lastText = text;
+          clearTimers();
+
+          try { window.setTutorialText && window.setTutorialText(text); } catch(e) {}
+
+          const delays = [0, 80, 160, 320, 640, 1200, 2000];
+          delays.forEach((d) => {
+            const id = setTimeout(translateOnce, d);
+            window.__vl_timers.push(id);
+          });
+        };
+      })();
+
+      (function () {
+        function hookOpenClick() {
+          const btn = document.querySelector('.vw-access-button') || document.querySelector('[vw-access-button]');
+          if (!btn) return false;
+
+          btn.addEventListener('click', () => {
+            const attempts = [200, 600, 1200, 2000, 3000];
+
+            attempts.forEach((ms) => {
+              setTimeout(() => {
+                try {
+                  const text = window.__vl_lastText;
+                  if (text && window.queueTranslate) window.queueTranslate(text);
+                  else window.translateTutorialText && window.translateTutorialText();
+                } catch (e) {}
+              }, ms);
+            });
+          });
+
+          return true;
+        }
+
+        const timer = setInterval(() => {
+          if (hookOpenClick()) clearInterval(timer);
+        }, 300);
+      })();
+    </script>
+  </body>
+</html>
+''';
+
+----------------
+[user_interface\widgets\vlibras_widget_web.dart]
+
+// ignore: deprecated_member_use
+import 'dart:html' as html;
+// ignore: deprecated_member_use
+import 'dart:ui_web' as ui;
+import 'package:flutter/material.dart';
+
+class VLibrasWidget extends StatefulWidget {
+  const VLibrasWidget({super.key});
+
+  static html.IFrameElement? _iframe;
+  static String? _pendingText;
+
+  static Future<void> buscarTraducao(String texto) async {
+    _pendingText = texto;
+
+    final frame = _iframe;
+    if (frame?.contentWindow == null) return;
+
+    frame!.contentWindow!.postMessage({
+      'type': 'VL_TEXT',
+      'text': texto,
+    }, '*');
+  }
+
+  @override
+  State<VLibrasWidget> createState() => _VLibrasWidgetState();
+}
+
+class _VLibrasWidgetState extends State<VLibrasWidget> {
+  static bool _registered = false;
+  final String _viewType = 'vlibras-iframe-view';
+  bool _hasInternet = true;
+  static const double _buttonScale = 1.5;
+
+  @override
+  void initState() {
+    super.initState();
+    _hasInternet = html.window.navigator.onLine ?? true;
+
+    if (_hasInternet) {
+      _initIframe();
+    }
+  }
+
+  void _initIframe() {
+    if (!_registered) {
+      _registered = true;
+
+      ui.platformViewRegistry.registerViewFactory(_viewType, (int viewId) {
+        final iframe = html.IFrameElement()
+          ..style.border = '0'
+          ..style.backgroundColor = 'transparent'
+          ..style.width = '300px'
+          ..style.height = '500px'
+          ..style.display = 'block'
+          ..srcdoc = _vlibrasHtml(_buttonScale)
+          ..setAttribute('allow', 'autoplay; microphone; camera')
+          ..setAttribute(
+            'sandbox',
+            'allow-scripts allow-same-origin allow-forms allow-popups',
+          );
+
+        VLibrasWidget._iframe = iframe;
+
+        iframe.onLoad.listen((_) async {
+          final pending = VLibrasWidget._pendingText;
+          if (pending != null && pending.trim().isNotEmpty) {
+            await VLibrasWidget.buscarTraducao(pending);
+            await Future<void>.delayed(const Duration(milliseconds: 60));
+            await VLibrasWidget.buscarTraducao(pending);
+          }
+        });
+
+        return iframe;
+      });
+    } else {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final pending = VLibrasWidget._pendingText;
+        if (pending != null && pending.trim().isNotEmpty) {
+          await VLibrasWidget.buscarTraducao(pending);
+          await Future<void>.delayed(const Duration(milliseconds: 60));
+          await VLibrasWidget.buscarTraducao(pending);
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    final targetWidth = screenWidth * 0.95;
+    final targetHeight = screenHeight * 0.90;
+
+    return SizedBox(
+      width: targetWidth,
+      height: targetHeight,
+      child: FittedBox(
+        fit: BoxFit.contain,
+        alignment: Alignment.bottomRight,
+        child: SizedBox(
+          width: 300,
+          height: 500,
+          child: _hasInternet
+              ? const HtmlElementView(viewType: 'vlibras-iframe-view')
+              : Container(
+                  width: 200,
+                  height: 100,
+                  margin: const EdgeInsets.only(bottom: 20, right: 20),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.2),
+                        blurRadius: 6,
+                        offset: const Offset(0, 3),
+                      )
+                    ],
+                  ),
+                  child: const Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.wifi_off, color: Colors.grey, size: 30),
+                      SizedBox(height: 8),
+                      Text(
+                        'Precisa de internet para o VLibras',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+String _vlibrasHtml(double scale) => '''
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="https://vlibras.gov.br/app/" />
+
+    <style>
+      html, body {
+        background: transparent !important;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+      }
+
+      div[vw-access-button],
+      .vw-access-button {
+        transform: scale($scale) !important;
+        transform-origin: bottom right !important;
+        -webkit-transform: scale($scale) !important;
+        -webkit-transform-origin: bottom right !important;
+        margin-right: 15px !important;
+        margin-bottom: 15px !important;
+      }
+
+      [vw] {
+        overflow: visible !important;
+      }
+
+      #vlibrasText {
+        position: fixed;
+        left: -10000px;
+        top: 0;
+        width: 10px;
+        height: 10px;
+        overflow: hidden;
+        opacity: 0.01;
+        user-select: text;
+        white-space: pre-wrap;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="vlibrasText">...</div>
+
+    <div vw class="enabled">
+      <div vw-access-button class="active"></div>
+      <div vw-plugin-wrapper>
+        <div class="vw-plugin-top-wrapper"></div>
+      </div>
+    </div>
+
+    <script src="https://vlibras.gov.br/app/vlibras-plugin.js"></script>
+
+    <script>
+      window.widgetInstance = new window.VLibras.Widget('https://vlibras.gov.br/app');
+
+      window.addEventListener('message', function(event) {
+        const data = event.data || {};
+        if (data.type !== 'VL_TEXT') return;
+
+        const text = data.text || '';
+        const el = document.getElementById('vlibrasText');
+        if (!el) return;
+
+        el.textContent = text;
+
+        try {
+          const range = document.createRange();
+          range.selectNodeContents(el);
+
+          const sel = window.getSelection();
+          sel.removeAllRanges();
+          sel.addRange(range);
+
+          document.dispatchEvent(new Event('selectionchange'));
+          el.dispatchEvent(new MouseEvent('mouseup', { bubbles: true }));
+          el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+        } catch(e) {
+          console.log('VLibras translate error:', e);
+        }
+      });
+    </script>
+  </body>
+</html>
+''';
 
 ----------------
 [utils\combinatorics_math.dart]

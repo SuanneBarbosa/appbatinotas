@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-
+import '../../utils/combinatorics_math.dart';
 import '../../controllers/combinatorics_controller.dart';
 import '../../models/saved_activity_model.dart';
 import 'package:flutter/services.dart';
@@ -49,13 +49,14 @@ class _SavedActivitiesScreenState extends State<SavedActivitiesScreen> {
   void _copyAnswers(SavedActivityModel activity) {
     final buffer = StringBuffer();
     buffer.writeln('Quantas músicas você encontrou?');
-    buffer.writeln(activity.studentFoundTotal.isEmpty ? '(não preenchida)' : activity.studentFoundTotal);
+    buffer.writeln(activity.studentFoundTotal.isEmpty
+        ? '(não preenchida)'
+        : activity.studentFoundTotal);
     buffer.writeln();
-    buffer.writeln('Qual cálculo você utilizou para encontrar esse valor?');
-    buffer.writeln(activity.studentCalculation.isEmpty ? '(não preenchida)' : activity.studentCalculation);
-    buffer.writeln();
-    buffer.writeln('Escreva a regra geral que representa esse tipo de situação.');
-    buffer.writeln(activity.studentGeneralRule.isEmpty ? '(não preenchida)' : activity.studentGeneralRule);
+    buffer.writeln('Escreva a regra geral.');
+    buffer.writeln(activity.studentGeneralRule.isEmpty
+        ? '(não preenchida)'
+        : activity.studentGeneralRule);
     if (activity.studentExplanation.isNotEmpty) {
       buffer.writeln();
       buffer.writeln('Explicação:');
@@ -76,6 +77,57 @@ class _SavedActivitiesScreenState extends State<SavedActivitiesScreen> {
 
     return '${twoDigits(date.day)}/${twoDigits(date.month)}/${date.year} '
         '${twoDigits(date.hour)}:${twoDigits(date.minute)}';
+  }
+
+  String _onlyNumbers(String value) {
+    final matches = RegExp(r'\d+').allMatches(value);
+
+    return matches.map((match) => match.group(0)).join();
+  }
+
+  BigInt? _expectedTotalForActivity(SavedActivityModel activity) {
+    final int n = activity.noteCount;
+    final int b = activity.beatCount;
+
+    if (n <= 0 || b <= 0) {
+      return null;
+    }
+
+    if (activity.mode == 'Com repetição') {
+      return CombinatoricsMath.powInt(n, b);
+    }
+
+    if (activity.mode == 'Sem repetição') {
+      if (b > n) {
+        return BigInt.zero;
+      }
+
+      return CombinatoricsMath.arrangementsWithoutRepetition(n, b);
+    }
+
+    return null;
+  }
+
+  bool? _isStudentTotalCorrect(SavedActivityModel activity) {
+    final expectedTotal = _expectedTotalForActivity(activity);
+
+    if (expectedTotal == null) {
+      return null;
+    }
+
+    final typedNumbers = _onlyNumbers(activity.studentFoundTotal);
+
+    if (typedNumbers.isEmpty) {
+      return null;
+    }
+
+    final studentTotal = BigInt.tryParse(typedNumbers);
+
+    if (studentTotal == null) {
+      return null;
+    }
+
+    return studentTotal == expectedTotal;
   }
 
   @override
@@ -170,17 +222,12 @@ class _SavedActivitiesScreenState extends State<SavedActivitiesScreen> {
                       value: activity.mode,
                     ),
                     const Divider(),
-                    _InfoLine(
+                    _InfoLineWithStatus(
                       label: 'Músicas encontradas',
                       value: activity.studentFoundTotal.isEmpty
                           ? '(não preenchida)'
                           : activity.studentFoundTotal,
-                    ),
-                    _InfoLine(
-                      label: 'Cálculo utilizado',
-                      value: activity.studentCalculation.isEmpty
-                          ? '(não preenchida)'
-                          : activity.studentCalculation,
+                      isCorrect: _isStudentTotalCorrect(activity),
                     ),
                     _InfoLine(
                       label: 'Regra geral',
@@ -231,6 +278,127 @@ class _InfoLine extends StatelessWidget {
           ),
           Expanded(
             child: SelectableText(value),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AnswerStatusText extends StatelessWidget {
+  final bool? isCorrect;
+
+  const _AnswerStatusText({
+    required this.isCorrect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (isCorrect == null) {
+      return const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.help_outline,
+            size: 18,
+            color: Color(0xFF64748B),
+          ),
+          SizedBox(width: 4),
+          Text(
+            'Resposta não conferida',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF64748B),
+            ),
+          ),
+        ],
+      );
+    }
+
+    if (isCorrect == true) {
+      return const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.check_circle,
+            size: 18,
+            color: Color(0xFF16A34A),
+          ),
+          SizedBox(width: 4),
+          Text(
+            'Resposta correta',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF16A34A),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return const Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.cancel,
+          size: 18,
+          color: Color(0xFFDC2626),
+        ),
+        SizedBox(width: 4),
+        Text(
+          'Resposta incorreta',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFFDC2626),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _InfoLineWithStatus extends StatelessWidget {
+  final String label;
+  final String value;
+  final bool? isCorrect;
+
+  const _InfoLineWithStatus({
+    required this.label,
+    required this.value,
+    required this.isCorrect,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 170,
+            child: Text(
+              '$label:',
+              style: const TextStyle(
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Wrap(
+              spacing: 10,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SelectableText(value),
+                _AnswerStatusText(
+                  isCorrect: isCorrect,
+                ),
+              ],
+            ),
           ),
         ],
       ),

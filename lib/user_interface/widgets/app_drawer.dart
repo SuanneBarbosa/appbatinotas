@@ -123,13 +123,13 @@ class AppDrawer extends StatelessWidget {
           ListTile(
             leading: const Icon(Icons.visibility),
             title: const Text(
-              'Visualização dos exemplos',
+              'Tipo de Visualização',
               style: TextStyle(fontWeight: FontWeight.w800),
             ),
             subtitle: Padding(
               padding: const EdgeInsets.only(top: 8),
               child: Semantics(
-                label: 'Escolher forma de visualização dos exemplos',
+                label: 'Escolher forma de visualização das combinações',
                 child: DropdownButtonFormField<ExamplesVisualizationMode>(
                   initialValue: controller.visualizationMode,
                   isExpanded: true,
@@ -143,7 +143,7 @@ class AppDrawer extends StatelessWidget {
                   items: const [
                     DropdownMenuItem(
                       value: ExamplesVisualizationMode.colorWithNumber,
-                      child: Text('Cor com número'),
+                      child: Text('Cor e número'),
                     ),
                     DropdownMenuItem(
                       value: ExamplesVisualizationMode.iconWithColor,
@@ -151,7 +151,7 @@ class AppDrawer extends StatelessWidget {
                     ),
                     DropdownMenuItem(
                       value: ExamplesVisualizationMode.nameWithColor,
-                      child: Text('Nome com cor'),
+                      child: Text('Nome e cor'),
                     ),
                   ],
                   onChanged: (mode) {

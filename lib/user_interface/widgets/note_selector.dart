@@ -169,7 +169,7 @@ class _MusicNoteCard extends StatelessWidget {
       height: 64,
       padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 4),
       decoration: BoxDecoration(
-        color: selected ? Colors.black.withValues(alpha: 0.05) : Colors.transparent,
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
@@ -181,7 +181,7 @@ class _MusicNoteCard extends StatelessWidget {
               Icon(
                 Icons.music_note,
                 color: note.color,
-                size: 16,
+                size: 30,
               ),
               const SizedBox(width: 2),
               Text(

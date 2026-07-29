@@ -1,23 +1,54 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'controllers/combinatorics_controller.dart';
+import 'services/combinatorics_tutorial_service.dart';
 import 'services/note_audio_service.dart';
-import 'user_interface/screens/home_screen.dart';
+import 'services/orientation_service.dart';
+import 'user_interface/screens/home_tutorial_overlay.dart';
+import 'user_interface/screens/splash_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await SystemChrome.setPreferredOrientations([
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
-  ]);
-  runApp(const CombinaSomAlgebricoApp());
+
+  bool isMobilePlatform() {
+    if (kIsWeb) {
+      return false;
+    }
+
+    return defaultTargetPlatform == TargetPlatform.android ||
+        defaultTargetPlatform == TargetPlatform.iOS;
+  }
+
+  bool orientationShown = true;
+
+  if (isMobilePlatform()) {
+    await SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+
+    final orientationService = OrientationService();
+    orientationShown = await orientationService.hasShownOrientation();
+  }
+
+  runApp(
+    CombinaSomAlgebricoApp(
+      orientationShown: orientationShown,
+    ),
+  );
 }
 
 class CombinaSomAlgebricoApp extends StatelessWidget {
-  const CombinaSomAlgebricoApp({super.key});
+  final bool orientationShown;
+
+  const CombinaSomAlgebricoApp({
+    super.key,
+    required this.orientationShown,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -31,10 +62,13 @@ class CombinaSomAlgebricoApp extends StatelessWidget {
           update: (_, audioService, previous) =>
               previous ?? CombinatoricsController(audioService: audioService),
         ),
+        ChangeNotifierProvider(
+          create: (_) => CombinatoricsTutorialController(),
+        ),
       ],
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        title: 'CombinaSom Algébrico',
+        title: 'Batinotas',
         locale: const Locale('pt', 'BR'),
         supportedLocales: const [Locale('pt', 'BR')],
         localizationsDelegates: const [
@@ -51,20 +85,31 @@ class CombinaSomAlgebricoApp extends StatelessWidget {
           scaffoldBackgroundColor: const Color(0xFFF8FAFC),
           cardTheme: CardThemeData(
             elevation: 1,
-            shape:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(20),
+            ),
           ),
           filledButtonTheme: FilledButtonThemeData(
             style: FilledButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 14,
+              ),
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(16)),
-              textStyle:
-                  const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ),
-        home: const HomeScreen(),
+        home: kIsWeb
+            ? const HomeTutorialOverlay()
+            : SplashScreen(
+                orientationShown: orientationShown,
+              ),
       ),
     );
   }
